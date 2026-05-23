@@ -22,49 +22,6 @@ class TileType(Enum):
     EMPTY = 6
 
 
-def convertToField(map_field):
-
-    if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
-        if map_field["Item"]["Name"] == "Kristal života":
-            return Field.POTION
-        elif map_field["Item"]["Name"] == "Freeze scroll":
-            return Field.FREEZE
-        elif map_field["Item"]["Name"] == "Dizzy scroll":
-            return Field.CONFUSION
-
-    if map_field["MonsterCard"] is not None:
-        if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_CARD_1
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_CARD_2
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_CARD_3
-
-    if map_field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
-        if map_field["Entity"]["Name"] == "Ice cube":
-            return Field.MONSTER_1
-        elif map_field["Entity"]["Name"] == "Ice cube":
-            return Field.MONSTER_2
-        elif map_field["Entity"]["Name"] == "Ice cube":
-            return Field.MONSTER_3
-        
-    if map_field["FieldType"]  == TileType.NORMAL.value:
-        return Field.NORMAL
-    elif map_field["FieldType"]  == TileType.OBSTACLE_SLOW.value:
-        return Field.SNOW
-    elif map_field["FieldType"]  == TileType.OBSTACLE.value:
-        return Field.SPIKES
-    elif map_field["FieldType"]  == TileType.WALL.value:
-        return Field.WALL
-    elif map_field["FieldType"] == TileType.EMPTY.value:
-        return Field.EMPTY
-
-
-    if map_field["FieldType"] == TileType.BASE or map_field["FieldType"]  == TileType.NORMAL:
-        return Field.NORMAL
-    return None
-
-
 
 class Field(Enum):
     NORMAL = 1
@@ -76,9 +33,9 @@ class Field(Enum):
     POTION = 6
     CONFUSION = 7
     FREEZE = 8
-    MONSTER_1 = 9
-    MONSTER_2 = 10
-    MONSTER_3 = 11
+    MY_MONSTER_1 = 9
+    MY_MONSTER_2 = 10
+    MY_MONSTER_3 = 11
 #   MONSTER CARDS
     MONSTER_CARD_1 = 12
     MONSTER_CARD_2 = 13
@@ -86,9 +43,12 @@ class Field(Enum):
 #   PLAYERS
     ME = 15
     OPPONENT = 16
+    ENEMY_MONSTER_1 = 17
+    ENEMY_MONSTER_2 = 18
+    ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, health, level, xp, inventory, cards, monsters, monster_cooldowns, map, statuses, statuses_lasting):
+    def __init__(self, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -120,6 +80,8 @@ class State(object):
         # koji status imam i koliko traje jos
         self.statuses = statuses
         self.statuses_lasting = statuses_lasting
+        self.me_xy = me_xy
+        self.opp_xy = opp_xy
 
     def get_state_vector(self):
         state_vector = np.concatenate([
@@ -148,7 +110,10 @@ class State(object):
             np.array(self.statuses),
 
             # statuses lasting
-            np.array(self.statuses_lasting)
+            np.array(self.statuses_lasting),
+            np.array(self.me_xy),
+            np.array(self.opp_xy)
+
         ])
         return state_vector
 
@@ -173,6 +138,57 @@ class State(object):
 
         return True
 
+def convertToField(map_field, player_id):
+
+    if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
+        if map_field["Item"]["Name"] == "Kristal života":
+            return Field.POTION
+        elif map_field["Item"]["Name"] == "Freeze scroll":
+            return Field.FREEZE
+        elif map_field["Item"]["Name"] == "Dizzy scroll":
+            return Field.CONFUSION
+
+    if map_field["MonsterCard"] is not None:
+        if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_1
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_2
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_3
+
+    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
+        if map_field["Entity"]["Name"] == "Ice cube":
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_1
+            else:
+                return Field.ENEMY_MONSTER_1
+        elif map_field["Entity"]["Name"] == "Ice cube":
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_2
+            else:
+                return Field.ENEMY_MONSTER_2
+        elif map_field["Entity"]["Name"] == "Ice cube":
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_3
+            else:
+                return Field.ENEMY_MONSTER_3
+
+    if map_field["FieldType"] == TileType.NORMAL.value:
+        return Field.NORMAL
+    elif map_field["FieldType"] == TileType.OBSTACLE_SLOW.value:
+        return Field.SNOW
+    elif map_field["FieldType"] == TileType.OBSTACLE.value:
+        return Field.SPIKES
+    elif map_field["FieldType"] == TileType.WALL.value:
+        return Field.WALL
+    elif map_field["FieldType"] == TileType.EMPTY.value:
+        return Field.EMPTY
+
+    if map_field["FieldType"] == TileType.BASE or map_field["FieldType"] == TileType.NORMAL:
+        return Field.NORMAL
+    return None
+
+
 
 def get_state(url, player_id):
     response = requests.get(url, timeout=5)
@@ -182,7 +198,7 @@ def get_state(url, player_id):
 
     map = []
     for field in data["Map"]["Grid"]:
-        map.append(convertToField(field))
+        map.append(convertToField(field, player_id))
 
     hp = data["Players"][player_id]["Health"]
     max_hp = data["Players"][player_id]["MaxHealth"]
@@ -215,33 +231,18 @@ def get_state(url, player_id):
             cards.append(Field.MONSTER_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
-    monster1 = 0
-    monster2 = 0
-    monster3 = 0
-    for field in data["Map"]["Grid"]:
-        if field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
-            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
-                monster1 += 1
-            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
-                monster2 += 1
-            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
-                monster3 += 1
-    monsters_count = [monster1, monster2, monster3]
-
 
     other_key = next(k for k in data["Players"] if k != player_id)
-    me_x, me_y = data["Players"][player_id]["X"], data["Players"][player_id]["Y"]
-    opp_x, opp_y = data["Players"][other_key]["X"], data["Players"][other_key]["Y"]
-    map[32 * me_x + me_y] = Field.ME
-    map[32 * opp_x + opp_y] = Field.OPPONENT
+    me_x, me_y = data["Players"][player_id]["Position"]["X"], data["Players"][player_id]["Position"]["Y"]
+    opp_x, opp_y = data["Players"][other_key]["Position"]["X"], data["Players"][other_key]["Position"]["Y"]
+    map[16 * me_x + me_y] = Field.ME
+    map[16 * opp_x + opp_y] = Field.OPPONENT
 
 
 
     print(map)
 
-    # TODO handle width height
-
-    return State(hp, level, xp, inventory, cards, monsters_count, cooldowns, map, statuses, statuses_lasting)
+    return State(hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
 
 def find_my_player_id(game_state, bot_name):
@@ -250,6 +251,8 @@ def find_my_player_id(game_state, bot_name):
         if player.get('Name') == bot_name:
             return player.get('Id')
     return None
+
+
 
 
 MAP_W = 32
