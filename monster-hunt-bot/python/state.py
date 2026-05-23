@@ -18,6 +18,58 @@ class TileType(Enum):
     EMPTY = 6
 
 
+def convertToField(map_field, player_id):
+
+    if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
+        if map_field["Item"]["Name"] == "Kristal života":
+            return Field.POTION
+        elif map_field["Item"]["Name"] == "Freeze scroll":
+            return Field.FREEZE
+        elif map_field["Item"]["Name"] == "Dizzy scroll":
+            return Field.CONFUSION
+
+    if map_field["MonsterCard"] is not None:
+        if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_1
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_2
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_3
+
+    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
+        if map_field["Entity"]["Name"] == "Ice cube":
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_1
+            else:
+                return Field.ENEMY_MONSTER_1
+        elif map_field["Entity"]["Name"] == "Ice cube":
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_2
+            else:
+                return Field.ENEMY_MONSTER_2
+        elif map_field["Entity"]["Name"] == "Ice cube":
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_3
+            else:
+                return Field.ENEMY_MONSTER_3
+
+    if map_field["FieldType"] == TileType.NORMAL.value:
+        return Field.NORMAL
+    elif map_field["FieldType"] == TileType.OBSTACLE_SLOW.value:
+        return Field.SNOW
+    elif map_field["FieldType"] == TileType.OBSTACLE.value:
+        return Field.SPIKES
+    elif map_field["FieldType"] == TileType.WALL.value:
+        return Field.WALL
+    elif map_field["FieldType"] == TileType.EMPTY.value:
+        return Field.EMPTY
+
+    if map_field["FieldType"] == TileType.BASE or map_field["FieldType"] == TileType.NORMAL:
+        return Field.NORMAL
+    return None
+
+
+
 class Field(Enum):
     NORMAL = 1
     SNOW = 2 #obstacle slow
@@ -110,78 +162,6 @@ class State(object):
         ])
         return state_vector
 
-    def inventory_count(self):
-        return len(self.inventory)
-
-    def inventory_full(self):
-        return self.inventory_count() >= 3
-
-    def add_item(self, item):
-        if self.inventory_full():
-            return False
-
-        if item == Item.POTION:
-            self.inventory.append(Field.POTION)
-        elif item == Item.CONFUSION:
-            self.inventory.append(Field.CONFUSION)
-        elif item == Item.FREEZE:
-            self.inventory.append(Field.FREEZE)
-        else:
-            raise ValueError("Invalid item type")
-
-        return True
-
-def convertToField(map_field, player_id):
-
-    if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
-        if map_field["Item"]["Name"] == "Kristal života":
-            return Field.POTION
-        elif map_field["Item"]["Name"] == "Freeze scroll":
-            return Field.FREEZE
-        elif map_field["Item"]["Name"] == "Dizzy scroll":
-            return Field.CONFUSION
-
-    if map_field["MonsterCard"] is not None:
-        if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_CARD_1
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_CARD_2
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_CARD_3
-
-    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
-        if map_field["Entity"]["Name"] == "Ice cube":
-            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
-                return Field.MY_MONSTER_1
-            else:
-                return Field.ENEMY_MONSTER_1
-        elif map_field["Entity"]["Name"] == "Ice cube":
-            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
-                return Field.MY_MONSTER_2
-            else:
-                return Field.ENEMY_MONSTER_2
-        elif map_field["Entity"]["Name"] == "Ice cube":
-            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
-                return Field.MY_MONSTER_3
-            else:
-                return Field.ENEMY_MONSTER_3
-
-    if map_field["FieldType"] == TileType.NORMAL.value:
-        return Field.NORMAL
-    elif map_field["FieldType"] == TileType.OBSTACLE_SLOW.value:
-        return Field.SNOW
-    elif map_field["FieldType"] == TileType.OBSTACLE.value:
-        return Field.SPIKES
-    elif map_field["FieldType"] == TileType.WALL.value:
-        return Field.WALL
-    elif map_field["FieldType"] == TileType.EMPTY.value:
-        return Field.EMPTY
-
-    if map_field["FieldType"] == TileType.BASE or map_field["FieldType"] == TileType.NORMAL:
-        return Field.NORMAL
-    return None
-
-
 
 def get_state(url, player_id):
     response = requests.get(url, timeout=5)
@@ -215,13 +195,13 @@ def get_state(url, player_id):
     cooldowns = []
     for card in data["Players"][player_id]["Cards"]:
         if card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_1)
+            cards.append(Field.MY_MONSTER_1)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_2)
+            cards.append(Field.MY_MONSTER_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_3)
+            cards.append(Field.MY_MONSTER_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
 
@@ -258,7 +238,7 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
     Vraca dict {(x, y): stamina_potrosena}.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION, 
-               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3 }
 
     current_tile = map_grid.get(pos, Field.NORMAL)
@@ -296,7 +276,7 @@ def get_move_vector(map_grid, pos, max_stamina=4):
     Ako je korak N blokiran, koraci N+1..max_stamina su takodje 0.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION,
-               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
     current_tile = map_grid.get(pos, Field.NORMAL)
@@ -353,7 +333,7 @@ def get_summon_vectors(map_grid, pos, cards):
     Vraca listu [(card, np.array(4,)), ...] — jedan unos po dostupnoj karti.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
-               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.POTION, Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
     x, y = pos
@@ -379,111 +359,88 @@ class Item(Enum):
     CONFUSION = 2
     FREEZE = 3
 
+def get_possible_pickups(state, player_pos):
+    """
+    Vraca dict sa posebnim maskama za svaki pickup i monster card.
 
-def get_adjacent_pickups(state, pos):
-    if state.inventory_full():
-        return []
+    Svaka maska:
+    [up, down, left, right]
 
-    x, y = pos
-    pickups = []
-
-    directions = [
-        (0, -1),  # up
-        (0, 1),  # down
-        (-1, 0),  # left
-        (1, 0)  # right
-    ]
-
-    for dx, dy in directions:
-        nx, ny = x + dx, y + dy
-
-        if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
-            continue
-
-        tile = state.map.get((nx, ny), Field.NORMAL)
-
-        if tile == Field.POTION:
-            pickups.append(((nx, ny), Item.POTION))
-        elif tile == Field.FREEZE:
-            pickups.append(((nx, ny), Item.FREEZE))
-        elif tile == Field.CONFUSION:
-            pickups.append(((nx, ny), Item.CONFUSION))
-
-    return pickups
-
-
-def pickup_item_at(state, player_pos, target_pos):
-    legal_pickups = get_adjacent_pickups(state, player_pos)
-
-    for pos, item in legal_pickups:
-        if pos == target_pos:
-
-            success = state.add_item(item)
-
-            if success:
-                state.map[pos] = Field.NORMAL
-                return True
-
-    return False
-
-
-def get_pickup_mask(state, player_pos):
-    if state.inventory_full():
-        return [0, 0, 0, 0]
+    1 = respektivni objekat postoji u tom pravcu
+    0 = ne postoji
+    """
 
     x, y = player_pos
 
     directions = [
-        (0, -1),  # up
-        (0, 1),  # down
-        (-1, 0),  # left
-        (1, 0)  # right
+        (0, 1),   # up
+        (0, -1),    # down
+        (-1, 0),   # left
+        (1, 0)     # right
     ]
 
-    item_tiles = {
+    tracked_fields = [
         Field.POTION,
         Field.FREEZE,
-        Field.CONFUSION
-    }
+        Field.CONFUSION,
+        Field.MONSTER_CARD_1,
+        Field.MONSTER_CARD_2,
+        Field.MONSTER_CARD_3
+    ]
 
-    mask = []
+    masks = {field: [0, 0, 0, 0] for field in tracked_fields}
 
-    for dx, dy in directions:
+    for i, (dx, dy) in enumerate(directions):
         nx, ny = x + dx, y + dy
 
         if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
-            mask.append(0)
             continue
 
         tile = state.map.get((nx, ny), Field.NORMAL)
 
-        if tile in item_tiles:
-            mask.append(1)
-        else:
-            mask.append(0)
+        if tile in masks:
+            masks[tile][i] = 1
 
-    return mask
+    return masks
 
+def flatten_possible_pickups(masks):
+    result = []
+
+    ordered_fields = [
+        Field.POTION,
+        Field.FREEZE,
+        Field.CONFUSION,
+        Field.MONSTER_CARD_1,
+        Field.MONSTER_CARD_2,
+        Field.MONSTER_CARD_3
+    ]
+
+    for field in ordered_fields:
+        result.extend(masks[field])
+
+    return np.array(result, dtype=np.int8)
 
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "a70eec86-9fae-4f25-8ad4-84357d435578"
-    bot_name = "dsa"
+    game_id = "b2b3944b-82d8-4388-9c40-5648d056873a"
+    bot_name = "asd"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
+
     data = response.json() if response.status_code == 200 else None
     if data is None:
         raise Exception("Problem parsing state")
+
+    player_id = find_my_player_id(data, bot_name)
 
     # Napravi map_grid dict
     map_grid = {}
     for field in data["Map"]["Grid"]:
         pos = field["Position"]
         x, y = pos["X"], pos["Y"]
-        tile = convertToField(field)
+        tile = convertToField(field, player_id)
         map_grid[(x, y)] = tile if tile is not None else Field.NORMAL
 
-    player_id = find_my_player_id(data, bot_name)
     if player_id is None:
         raise Exception(f"Igrac '{bot_name}' nije nadjen")
 
@@ -520,32 +477,7 @@ if __name__ == "__main__":
     else:
         print("\nNema dostupnih karata za postavljanje")
 
-    # Pickup logika
-
-    pickup_mask = get_pickup_mask(state, my_pos)
-    print(f"\nPickup mask [up, down, left, right]: {pickup_mask}")
-
-    pickups = get_adjacent_pickups(state, my_pos)
-
-    if pickups:
-        print("\nMoguci pickup itemi:")
-        for item_pos, item in pickups:
-            print(f"  {item_pos} -> {item.name}")
-
-        target_pos, target_item = pickups[0]
-
-        success = pickup_item_at(state, my_pos, target_pos)
-
-        if success:
-            print(f"\nPickup uspesan: {target_item.name} sa polja {target_pos}")
-        else:
-            print(f"\nPickup neuspesan: {target_item.name} sa polja {target_pos}")
-
-    else:
-        print("\nNema legalnih pickup itema.")
-
-    print("\nInventory stanje:")
-    print(state.inventory)
-
-    print(f"\nUkupno itema: {state.inventory_count()}")
-    print(f"Inventory full: {state.inventory_full()}")
+    action_masks = get_possible_pickups(state, my_pos)
+    mask_vector = flatten_possible_pickups(action_masks)
+    print(mask_vector)
+    print(mask_vector.shape)  # (24,)
