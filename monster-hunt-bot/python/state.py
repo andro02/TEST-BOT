@@ -1,10 +1,6 @@
 import numpy as np
-
 from enum import Enum
-
 import requests
-
-from enum import Enum, auto
 
 
 def pad_list(my_list, target_size, padding_value):
@@ -48,7 +44,7 @@ def convertToField(map_field):
             return Field.MONSTER_2
         elif map_field["Entity"]["Name"] == "Ice cube":
             return Field.MONSTER_3
-        
+
     if map_field["FieldType"]  == TileType.NORMAL.value:
         return Field.NORMAL
     elif map_field["FieldType"]  == TileType.OBSTACLE_SLOW.value:
@@ -77,9 +73,9 @@ class Field(Enum):
     POTION = 6
     CONFUSION = 7
     FREEZE = 8
-    MONSTER_1 = 9
-    MONSTER_2 = 10
-    MONSTER_3 = 11
+    MY_MONSTER_1 = 9
+    MY_MONSTER_2 = 10
+    MY_MONSTER_3 = 11
 #   MONSTER CARDS
     MONSTER_CARD_1 = 12
     MONSTER_CARD_2 = 13
@@ -87,9 +83,12 @@ class Field(Enum):
 #   PLAYERS
     ME = 15
     OPPONENT = 16
+    ENEMY_MONSTER_1 = 17
+    ENEMY_MONSTER_2 = 18
+    ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, health, level, xp, inventory, cards, monsters, monster_cooldowns, map, statuses, statuses_lasting):
+    def __init__(self, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -112,8 +111,6 @@ class State(object):
         self.inventory = inventory
         # 1 je monster 1, 2 monster 2, 3 monster 3
         self.cards = cards
-        # koliko monstera posedujem 1. pozicija za kolicinu monster 1, 2. pozicija za kolicinu monster 2, 3. pozicija za kolicinu monster 3
-        self.monsters = monsters
         # koliko poteza dok ne mogu opet koristim sledeceg monstera
         self.monster_cooldowns = monster_cooldowns
         # kolekcija enuma Field
@@ -121,6 +118,8 @@ class State(object):
         # koji status imam i koliko traje jos
         self.statuses = statuses
         self.statuses_lasting = statuses_lasting
+        self.me_xy = me_xy
+        self.opp_xy = opp_xy
 
     def get_state_vector(self):
         state_vector = np.concatenate([
@@ -149,7 +148,10 @@ class State(object):
             np.array(self.statuses),
 
             # statuses lasting
-            np.array(self.statuses_lasting)
+            np.array(self.statuses_lasting),
+            np.array(self.me_xy),
+            np.array(self.opp_xy)
+
         ])
         return state_vector
 
@@ -162,7 +164,7 @@ def get_state(url, player_id):
 
     map = []
     for field in data["Map"]["Grid"]:
-        map.append(convertToField(field))
+        map.append(convertToField(field, player_id))
 
     hp = data["Players"][player_id]["Health"]
     max_hp = data["Players"][player_id]["MaxHealth"]
@@ -195,18 +197,6 @@ def get_state(url, player_id):
             cards.append(Field.MONSTER_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
-    monster1 = 0
-    monster2 = 0
-    monster3 = 0
-    for field in data["Map"]["Grid"]:
-        if field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
-            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
-                monster1 += 1
-            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
-                monster2 += 1
-            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
-                monster3 += 1
-    monsters_count = [monster1, monster2, monster3]
 
     other_key = next(k for k in data["Players"] if k != player_id)
     me_x, me_y = data["Players"][player_id]["Position"]["X"], data["Players"][player_id]["Position"]["Y"]
@@ -214,13 +204,9 @@ def get_state(url, player_id):
     map[16 * me_x + me_y] = Field.ME
     map[16 * opp_x + opp_y] = Field.OPPONENT
 
-
-
     print(map)
 
-    # TODO handle width height
-
-    return State(hp, level, xp, inventory, cards, monsters_count, cooldowns, map, statuses, statuses_lasting)
+    return State(hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
 
 def find_my_player_id(game_state, bot_name):
@@ -229,6 +215,8 @@ def find_my_player_id(game_state, bot_name):
         if player.get('Name') == bot_name:
             return player.get('Id')
     return None
+
+
 
 
 MAP_W = 32
@@ -270,15 +258,43 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
     return moves
 
 
+# Redosled pravaca: LEFT, RIGHT, UP, DOWN — svaki ima max_stamina koraka
+# Vektor: [L1,L2,L3,L4, R1,R2,R3,R4, U1,U2,U3,U4, D1,D2,D3,D4]
+DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
 def get_move_vector(map_grid, pos, max_stamina=4):
     """
-    Vraca numpy array oblika (32*16,) sa True na poljima gde igrac moze da se pomeri.
-    Indeks polja = x * MAP_H + y
+    Vraca numpy array oblika (4 * max_stamina,) = (16,).
+    1 = moze da se pomeri na taj korak u tom pravcu, 0 = ne moze.
+    Ako je korak N blokiran, koraci N+1..max_stamina su takodje 0.
     """
-    moves = get_possible_moves(map_grid, pos, max_stamina)
-    vector = np.zeros(MAP_W * MAP_H, dtype=bool)
-    for (x, y) in moves:
-        vector[x * MAP_H + y] = True
+    BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION,
+               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
+
+    current_tile = map_grid.get(pos, Field.NORMAL)
+    used_at_start = 1 if current_tile == Field.SNOW else 0
+
+    vector = np.zeros(len(DIRECTIONS) * max_stamina, dtype=np.int8)
+    x, y = pos
+
+    for dir_idx, (dx, dy) in enumerate(DIRECTIONS):
+        stamina = used_at_start
+        nx, ny = x, y
+        for step in range(max_stamina):
+            nx += dx
+            ny += dy
+            if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+                break
+            tile = map_grid.get((nx, ny), Field.NORMAL)
+            if tile in BLOCKED:
+                break
+            stamina += 2 if tile == Field.SNOW else 1
+            if stamina <= max_stamina:
+                vector[dir_idx * max_stamina + step] = 1
+            else:
+                break
+
     return vector
 
 
@@ -305,14 +321,23 @@ def get_summon_positions(map_grid, pos):
 
 def get_summon_vectors(map_grid, pos, cards):
     """
-    Za svaku karticu iz inventory-a koja nije na cooldown-u vraca vektor (512,) bool.
-    Vraca listu [(card, np.array(512, bool)), ...] — jedan unos po dostupnoj karti.
+    Za svaku karticu koja nije na cooldown-u vraca vektor (4,) int8.
+    Redosled: LEFT, RIGHT, UP, DOWN — 1 = moze da postavi, 0 = ne moze.
+    Vraca listu [(card, np.array(4,)), ...] — jedan unos po dostupnoj karti.
     """
-    positions = get_summon_positions(map_grid, pos)
+    BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
+               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
-    base_vector = np.zeros(MAP_W * MAP_H, dtype=bool)
-    for (x, y) in positions:
-        base_vector[x * MAP_H + y] = True
+    x, y = pos
+    base_vector = np.zeros(len(DIRECTIONS), dtype=np.int8)
+    for dir_idx, (dx, dy) in enumerate(DIRECTIONS):
+        nx, ny = x + dx, y + dy
+        if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+            continue
+        tile = map_grid.get((nx, ny), Field.NORMAL)
+        if tile not in BLOCKED:
+            base_vector[dir_idx] = 1
 
     result = []
     for card in cards:
@@ -425,6 +450,8 @@ if __name__ == "__main__":
     for dest, cost in sorted(moves.items()):
         tile = map_grid.get(dest, Field.NORMAL)
         print(f"  X={dest[0]}  Y={dest[1]}  stamina={cost}  tile={tile.name}")
+
+    print(get_move_vector(map_grid, my_pos))
 
     # Moguce pozicije za summon
     cards = player.get("Cards") or []
