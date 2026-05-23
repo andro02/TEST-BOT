@@ -1,6 +1,14 @@
 import numpy as np
-import requests
+
 from enum import Enum
+
+import requests
+
+from enum import Enum, auto
+
+def pad_list(my_list, target_size, padding_value):
+    if len(my_list) < target_size:
+        my_list.extend([padding_value] * (target_size - len(my_list)))
 
 
 class TileType(Enum):
@@ -15,7 +23,7 @@ class TileType(Enum):
 def convertToField(map_field):
 
     if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
-        if map_field["Item"]["Name"] == "Kristal života":
+        if map_field["Item"]["Name"] == "Kristal ?ivota":
             return Field.POTION
         elif map_field["Item"]["Name"] == "Freeze scroll":
             return Field.FREEZE
@@ -79,6 +87,72 @@ class State(object):
         self.map = np.zeros((32, 16))
         # koji status imam i koliko traje jos
         self.status = [1, 2]
+
+
+
+def get_state(url, player_id):
+    response = requests.get(url, timeout=5)
+    data =  response.json() if response.status_code == 200 else None
+    if data is None:
+        raise Exception("Problem parsing state")
+
+    map = []
+    for field in data["Map"]["Grid"]:
+        map.append(convertToField(field))
+
+    player_id = str(player_id)
+    hp = data["Players"][player_id]["Health"]
+    max_hp = data["Players"][player_id]["MaxHealth"]
+
+    xp = data["Players"][player_id]["Xp"]
+    level = data["Players"][player_id]["Level"]
+
+    statuses = list(data["Players"][player_id]["ActiveStatuses"].keys())
+    statuses_lasting = list(data["Players"][player_id]["ActiveStatuses"].values())
+
+    inventory = []
+    for item in data["Players"][player_id]["Inventory"]:
+        if item["Name"] == "Kristal ?ivota":
+            inventory.append(Field.POTION)
+        elif item["Name"] == "Freeze scroll":
+            inventory.append(Field.FREEZE)
+        elif item["Name"] == "Dizzy scroll":
+            inventory.append(Field.CONFUSION)
+
+    cards = []
+    for card in data["Players"][player_id]["Cards"]:
+        if card["Name"] == "Card of Ice Cubes":
+            cards.append(Field.MONSTER_1)
+        elif card["Name"] == "Card of Ice Cubes":
+            cards.append(Field.MONSTER_2)
+        elif card["Name"] == "Card of Ice Cubes":
+            cards.append(Field.MONSTER_3)
+
+    monster1 = 0
+    monster2 = 0
+    monster3 = 0
+    for field in data["Map"]["Grid"]:
+        if field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
+            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
+                monster1 += 1
+            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
+                monster2 += 1
+            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
+                monster3 += 1
+    monsters_count = [monster1, monster2, monster3]
+
+    print(map)
+
+    # TODO handle width height
+
+    return State()
+
+def find_my_player_id(game_state, bot_name):
+    players = game_state.get('Players', {})
+    for _, player in players.items():
+        if player.get('Name') == bot_name:
+            return player.get('Id')
+    return None
 
 MAP_W = 32
 MAP_H = 16
@@ -151,7 +225,7 @@ def get_summon_positions(map_grid, pos):
 def get_summon_vectors(map_grid, pos, cards):
     """
     Za svaku karticu iz inventory-a koja nije na cooldown-u vraca vektor (512,) bool.
-    Vraca dict {card_id: np.array(512, bool)}.
+    Vraca listu [(card, np.array(512, bool)), ...] — jedan unos po dostupnoj karti.
     """
     positions = get_summon_positions(map_grid, pos)
 
@@ -159,62 +233,58 @@ def get_summon_vectors(map_grid, pos, cards):
     for (x, y) in positions:
         base_vector[x * MAP_H + y] = True
 
-    result = {}
+    result = []
     for card in cards:
         if not card.get("OnCooldown", False):
-            result[card["Id"]] = base_vector.copy()
+            result.append((card, base_vector.copy()))
 
     return result
-
-
-def get_state(url, game_id):
-    url = f"{url}/game/state/{game_id}"
-    response = requests.get(url, timeout=5)
-    data = response.json() if response.status_code == 200 else None
-    if data is None:
-        raise Exception("Problem parsing state")
-
-    state = State()
-    state.map = {}
-
-    for field in data["Map"]["Grid"]:
-        pos = field["Position"]
-        x, y = pos["X"], pos["Y"]
-        tile = convertToField(field)
-        state.map[(x, y)] = tile if tile is not None else Field.NORMAL
-
-    return state, data
-
 
 if __name__ == "__main__":
     url = "http://localhost:8080"
     game_id = "8339a17b-7b27-489b-9746-2ca203ab6849"
-    state, data = get_state(url, game_id)
+    bot_name = "dsa"
 
-    # Uzmi poziciju prvog igraca
-    players = data.get("Players", {})
-    for pid, player in players.items():
-        pos = player["Position"]
-        my_pos = (pos["X"], pos["Y"])
-        name = player["Name"]
-        moves = get_possible_moves(state.map, my_pos)
-        print(f"\nIgrac '{name}' na {my_pos} — {len(moves)} mogucih poteza:")
-        for dest, cost in sorted(moves.items()):
-            tile = state.map.get(dest, Field.NORMAL)
-            print(f"  {dest}  stamina: {cost}  tile: {tile.name}")
+    response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
+    data = response.json() if response.status_code == 200 else None
+    if data is None:
+        raise Exception("Problem parsing state")
 
-        vector = get_move_vector(state.map, my_pos)
-        # print(f"\nVektor kretanja (True={vector.sum()} polja):")
-        # print(vector)
+    # Napravi map_grid dict
+    map_grid = {}
+    for field in data["Map"]["Grid"]:
+        pos = field["Position"]
+        x, y = pos["X"], pos["Y"]
+        tile = convertToField(field)
+        map_grid[(x, y)] = tile if tile is not None else Field.NORMAL
 
-        cards = player.get("Cards") or []
-        available_cards = [c for c in cards if not c.get("OnCooldown", False)]
-        if available_cards:
-            summon_pos = get_summon_positions(state.map, my_pos)
-            print(f"\nMoguce pozicije za postavljanje monstera ({len(summon_pos)}):")
-            for (sx, sy) in summon_pos:
-                tile = state.map.get((sx, sy), Field.NORMAL)
+    player_id = find_my_player_id(data, bot_name)
+    if player_id is None:
+        raise Exception(f"Igrac '{bot_name}' nije nadjen")
+
+    player = data["Players"][str(player_id)]
+    my_pos = (player["Position"]["X"], player["Position"]["Y"])
+    print(f"Igrac '{bot_name}' ID={player_id} na poziciji {my_pos}")
+
+    # Moguca kretanja
+    moves = get_possible_moves(map_grid, my_pos)
+    print(f"\nMoguca kretanja ({len(moves)}):")
+    for dest, cost in sorted(moves.items()):
+        tile = map_grid.get(dest, Field.NORMAL)
+        print(f"  X={dest[0]}  Y={dest[1]}  stamina={cost}  tile={tile.name}")
+
+    # Moguce pozicije za summon
+    cards = player.get("Cards") or []
+    summon_vecs = get_summon_vectors(map_grid, my_pos, cards)
+
+    if summon_vecs:
+        for i, (card, vector) in enumerate(summon_vecs):
+            card_name = card.get("Name", "?")
+            card_id = card.get("Id", "?")
+            true_positions = [(x, y) for x in range(MAP_W) for y in range(MAP_H) if vector[x * MAP_H + y]]
+            print(f"\nKarta [{i}] '{card_name}' (ID={card_id}) — True={vector.sum()} pozicija:")
+            for (sx, sy) in true_positions:
+                tile = map_grid.get((sx, sy), Field.NORMAL)
                 print(f"  X={sx}  Y={sy}  tile={tile.name}")
-        else:
-            print(f"\nNema dostupnih karata za postavljanje")
-
+    else:
+        print("\nNema dostupnih karata za postavljanje")
