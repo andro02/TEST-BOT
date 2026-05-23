@@ -170,19 +170,14 @@ def reward_fn(prev_state, next_state, done=False):
     # reward approaching enemy slightly
     reward += (prev_dist - next_dist) * 0.05
 
-    if next_state.inventory[0] != 0:
-        reward += 2
-    if next_state.inventory[1] != 0:
-        reward += 2
-    if next_state.inventory[2] != 0:
-        reward += 2
+    reward += (
+        next_state.inventory - prev_state.inventory
+    ) * 1.5
 
-    if next_state.cards[0] != 0:
-        reward += 3
-    if next_state.cards[1] != 0:
-        reward += 3
-    if next_state.cards[2] != 0:
-        reward += 3
+    reward += (
+        len(next_state.cards) -
+        len(prev_state.cards)
+    ) * 2.0
 
     prev_frozen = "Frozen" in prev_state.statuses
     next_frozen = "Frozen" in next_state.statuses
@@ -207,9 +202,9 @@ def reward_fn(prev_state, next_state, done=False):
     if tile == Field.SNOW:
         reward -= 0.15
 
-    phase = next_state.turn_counter // 15
+    phase = next_state.turn // 15
     next_phase = phase + 1
-    turns_until_collapse = 15 - (next_state.turn_counter % 15)
+    turns_until_collapse = 15 - (next_state.turn % 15)
 
     if is_collapse_tile(x, y, phase):
         reward -= 15.0
