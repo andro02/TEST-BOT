@@ -82,7 +82,8 @@ def connect_websocket(base_url, game_id):
             print(f"[WS] handshake failed: {resp[:200]}")
             return
         print(f"[WS] connected for {game_id}")
-        buf = b""
+        header_end = resp.find(b"\r\n\r\n")
+        buf = resp[header_end + 4:] if header_end != -1 else b""
         while True:
             try:
                 chunk = sock.recv(4096)
@@ -94,7 +95,8 @@ def connect_websocket(base_url, game_id):
                     if msg.get("Type") == 15:
                         turn_name = _TURN_NAMES.get(str(msg.get("Data", "")), "?")
                         print(f"[WS] turn -> {turn_name}")
-                        turn_event.set()
+                        if turn_name != "MonsterTurn":
+                            turn_event.set()
             except Exception:
                 break
         sock.close()
@@ -175,23 +177,25 @@ def main():
 
     agent = PPO(obs_dim=obs_dim, action_dim=60)
     last_state = init_state
+    current_raw = raw  # nose stanje izmedju tura — eliminise redundantni GET #1
 
     for update in range(TOTAL_UPDATES):
         memory = make_memory()
         steps_collected = 0
 
         while steps_collected < ROLLOUT_STEPS:
-            # Cekaj WS signal da se turn promenio (eliminise polling + MonsterTurn sleep)
-            turn_event.wait(timeout=10)
-            turn_event.clear()
+            # Ako nemamo stanje (MonsterTurn prethodne iteracije), cekaj WS + GET
+            if current_raw is None:
+                turn_event.wait(timeout=10)
+                turn_event.clear()
+                current_raw = requests.get(state_url, timeout=5).json()
 
-            raw = requests.get(state_url, timeout=5).json()  # GET #1
-            gs = raw.get("GameState", "")
+            gs = current_raw.get("GameState", "")
 
             if gs == "Ending":
                 memory["dones"][-1] = 1 if memory["dones"] else 0
-                game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
-                gs = raw.get("GameState", "")
+                game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+                continue
 
             if gs == "Player1Turn":
                 current_id = p1_id
@@ -200,9 +204,11 @@ def main():
                 current_id = p2_id
                 player_name = BOT2_NAME
             else:
-                continue  # MonsterTurn — turn_event ce opet da se setuje
+                # MonsterTurn: odbaci stanje i cekaj sledeci signal
+                current_raw = None
+                continue
 
-            state = parse_state(raw, current_id)
+            state = parse_state(current_raw, current_id)
             obs = state.get_state_vector()
             mask = build_action_mask(state)
 
@@ -215,13 +221,13 @@ def main():
             except Exception as e:
                 print(f"Bad action [{gs}]:", command, e)
 
-            # Cekaj WS potvrdu da je turn promenjen pre nego sto fetchujemo next state
+            # Cekaj WS potvrdu da je turn promenjen, zatim GET (jedini GET po potezu)
             turn_event.wait(timeout=6)
             turn_event.clear()
+            current_raw = requests.get(state_url, timeout=5).json()
 
-            next_raw = requests.get(state_url, timeout=5).json()  # GET #2
-            done = next_raw.get("GameState", "") == "Ending"
-            next_state = parse_state(next_raw, current_id)
+            done = current_raw.get("GameState", "") == "Ending"
+            next_state = parse_state(current_raw, current_id)
             reward = reward_fn(prev_state, next_state, done)
 
             # print_turn(gs, player_name, command, next_state, reward)
