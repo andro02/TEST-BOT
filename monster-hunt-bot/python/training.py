@@ -202,9 +202,9 @@ def reward_fn(prev_state, next_state, done=False):
     if tile == Field.SNOW:
         reward -= 0.15
 
-    phase = next_state.turn // 15
+    phase = next_state.turn_counter // 15
     next_phase = phase + 1
-    turns_until_collapse = 15 - (next_state.turn % 15)
+    turns_until_collapse = 15 - (next_state.turn_counter % 15)
 
     if is_collapse_tile(x, y, phase):
         reward -= 15.0
