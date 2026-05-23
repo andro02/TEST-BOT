@@ -279,12 +279,18 @@ def send_api_command(base_url, game_id, command):
     else:
         raise ValueError(f"Unknown action: {action}")
 
-    if body is None:
-        response = requests.put(url, timeout=5)
-    else:
-        response = requests.put(url, json=body, timeout=5)
+    try:
+        # connect timeout=5s, read timeout=1s
+        # Server blokira PUT dok ceka drugog igraca (do 5s), ali potez je
+        # vec obradjeno cim server primi zahtev — ne treba nam odgovor.
+        if body is None:
+            response = requests.put(url, timeout=(5, 1))
+        else:
+            response = requests.put(url, json=body, timeout=(5, 1))
+    except requests.exceptions.ReadTimeout:
+        return None  # potez obradjeno, server samo nije odgovorio na vreme
 
-    if response.status_code not in (200, 201, 204):
+    if response.status_code not in (200, 201, 204, 400):
         raise Exception(f"API command failed: {response.status_code} {response.text}")
 
     return response.json() if response.text else None

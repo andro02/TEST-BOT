@@ -1,7 +1,6 @@
 # train.py
 
 import requests
-import time
 import threading
 import socket
 import hashlib
@@ -25,8 +24,38 @@ def start_game(base_url, p1_name, p2_name):
     return game_id
 
 
+_TURN_NAMES = {"1": "Player1Turn", "2": "Player2Turn", "3": "MonsterTurn"}
+
+
+def _parse_ws_frames(buf):
+    """Parsira WebSocket frejmove iz bajtova. Vraca (lista poruka, ostatak bafera)."""
+    import struct, json
+    messages = []
+    i = 0
+    while i + 2 <= len(buf):
+        b0, b1 = buf[i], buf[i + 1]
+        payload_len = b1 & 0x7F
+        i += 2
+        if payload_len == 126:
+            if i + 2 > len(buf): break
+            payload_len = struct.unpack(">H", buf[i:i+2])[0]; i += 2
+        elif payload_len == 127:
+            if i + 8 > len(buf): break
+            payload_len = struct.unpack(">Q", buf[i:i+8])[0]; i += 8
+        if i + payload_len > len(buf): break
+        payload = buf[i:i + payload_len]
+        i += payload_len
+        if (b0 & 0x0F) == 1:  # text frame
+            try:
+                messages.append(json.loads(payload.decode("utf-8")))
+            except Exception:
+                pass
+    return messages, buf[i:]
+
+
 def connect_websocket(base_url, game_id):
-    """Konektuje se na WebSocket bez eksternih paketa da bi server presao Start -> Player1Turn."""
+    """Konektuje se na WS i vraca (thread, turn_event).
+    turn_event se setuje svaki put kad server posalje Type:15 (promena tura)."""
     parsed = base_url.replace("http://", "")
     host, _, port_str = parsed.partition(":")
     port = int(port_str) if port_str else 80
@@ -42,27 +71,37 @@ def connect_websocket(base_url, game_id):
         f"Sec-WebSocket-Version: 13\r\n\r\n"
     )
 
+    turn_event = threading.Event()
+
     def run():
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((host, port))
         sock.sendall(handshake.encode())
         resp = sock.recv(4096)
-        if b"101" in resp:
-            print(f"[WS] connected for {game_id}")
-        else:
+        if b"101" not in resp:
             print(f"[WS] handshake failed: {resp[:200]}")
             return
+        print(f"[WS] connected for {game_id}")
+        buf = b""
         while True:
             try:
-                if not sock.recv(4096):
+                chunk = sock.recv(4096)
+                if not chunk:
                     break
+                buf += chunk
+                msgs, buf = _parse_ws_frames(buf)
+                for msg in msgs:
+                    if msg.get("Type") == 15:
+                        turn_name = _TURN_NAMES.get(str(msg.get("Data", "")), "?")
+                        print(f"[WS] turn -> {turn_name}")
+                        turn_event.set()
             except Exception:
                 break
         sock.close()
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    return thread
+    return thread, turn_event
 
 ROLLOUT_STEPS = 512
 TOTAL_UPDATES = 1000
@@ -87,10 +126,12 @@ def reward_fn(prev_state, next_state, done=False):
 
 
 def new_game(base_url, p1_name, p2_name):
-    """Pokrece novu igru i vraca (game_id, p1_id, p2_id, state_url, raw)."""
+    """Pokrece novu igru i vraca (game_id, p1_id, p2_id, state_url, raw, turn_event)."""
     game_id = start_game(base_url, p1_name, p2_name)
-    connect_websocket(base_url, game_id)
-    time.sleep(0.5)
+    _, turn_event = connect_websocket(base_url, game_id)
+    # Cekaj WS Type:15 (Start -> Player1Turn) umesto fiksnog sleep-a
+    turn_event.wait(timeout=3)
+    turn_event.clear()
 
     state_url = f"{base_url}/game/state/{game_id}"
     raw = requests.get(state_url, timeout=5).json()
@@ -98,7 +139,7 @@ def new_game(base_url, p1_name, p2_name):
     p1_id = str(find_my_player_id(raw, p1_name))
     p2_id = str(find_my_player_id(raw, p2_name))
     print(f"P1 ID={p1_id}  P2 ID={p2_id}")
-    return game_id, p1_id, p2_id, state_url, raw
+    return game_id, p1_id, p2_id, state_url, raw, turn_event
 
 
 def print_turn(gs, player_name, command, state, reward):
@@ -126,9 +167,8 @@ def print_turn(gs, player_name, command, state, reward):
 
 
 def main():
-    game_id, p1_id, p2_id, state_url, raw = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+    game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
 
-    # Odredi obs_dim iz prvog state-a (koristimo vec-fetchovani raw)
     init_state = parse_state(raw, p1_id)
     obs_dim = len(init_state.get_state_vector())
     print(f"obs_dim={obs_dim}")
@@ -141,12 +181,16 @@ def main():
         steps_collected = 0
 
         while steps_collected < ROLLOUT_STEPS:
+            # Cekaj WS signal da se turn promenio (eliminise polling + MonsterTurn sleep)
+            turn_event.wait(timeout=10)
+            turn_event.clear()
+
             raw = requests.get(state_url, timeout=5).json()  # GET #1
             gs = raw.get("GameState", "")
 
             if gs == "Ending":
                 memory["dones"][-1] = 1 if memory["dones"] else 0
-                game_id, p1_id, p2_id, state_url, raw = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+                game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
                 gs = raw.get("GameState", "")
 
             if gs == "Player1Turn":
@@ -156,11 +200,9 @@ def main():
                 current_id = p2_id
                 player_name = BOT2_NAME
             else:
-                # MonsterTurn — cekaj
-                time.sleep(0.1)
-                continue
+                continue  # MonsterTurn — turn_event ce opet da se setuje
 
-            state = parse_state(raw, current_id)  # koristi GET #1, bez novog zahteva
+            state = parse_state(raw, current_id)
             obs = state.get_state_vector()
             mask = build_action_mask(state)
 
@@ -173,11 +215,13 @@ def main():
             except Exception as e:
                 print(f"Bad action [{gs}]:", command, e)
 
-            time.sleep(0.05)
+            # Cekaj WS potvrdu da je turn promenjen pre nego sto fetchujemo next state
+            turn_event.wait(timeout=6)
+            turn_event.clear()
 
             next_raw = requests.get(state_url, timeout=5).json()  # GET #2
             done = next_raw.get("GameState", "") == "Ending"
-            next_state = parse_state(next_raw, current_id)  # koristi GET #2, bez novog zahteva
+            next_state = parse_state(next_raw, current_id)
             reward = reward_fn(prev_state, next_state, done)
 
             # print_turn(gs, player_name, command, next_state, reward)
