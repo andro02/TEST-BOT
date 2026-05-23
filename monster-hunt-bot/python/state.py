@@ -66,8 +66,6 @@ class State(object):
         self.inventory = inventory
         # 1 je monster 1, 2 monster 2, 3 monster 3
         self.cards = cards
-        # koliko monstera posedujem 1. pozicija za kolicinu monster 1, 2. pozicija za kolicinu monster 2, 3. pozicija za kolicinu monster 3
-        self.monsters = monsters
         # koliko poteza dok ne mogu opet koristim sledeceg monstera
         self.monster_cooldowns = monster_cooldowns
         # kolekcija enuma Field
