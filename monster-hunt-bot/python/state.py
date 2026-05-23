@@ -1,10 +1,6 @@
 import numpy as np
-
 from enum import Enum
-
 import requests
-
-from enum import Enum, auto
 
 
 def pad_list(my_list, target_size, padding_value):
@@ -285,15 +281,43 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
     return moves
 
 
+# Redosled pravaca: LEFT, RIGHT, UP, DOWN — svaki ima max_stamina koraka
+# Vektor: [L1,L2,L3,L4, R1,R2,R3,R4, U1,U2,U3,U4, D1,D2,D3,D4]
+DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
 def get_move_vector(map_grid, pos, max_stamina=4):
     """
-    Vraca numpy array oblika (32*16,) sa True na poljima gde igrac moze da se pomeri.
-    Indeks polja = x * MAP_H + y
+    Vraca numpy array oblika (4 * max_stamina,) = (16,).
+    1 = moze da se pomeri na taj korak u tom pravcu, 0 = ne moze.
+    Ako je korak N blokiran, koraci N+1..max_stamina su takodje 0.
     """
-    moves = get_possible_moves(map_grid, pos, max_stamina)
-    vector = np.zeros(MAP_W * MAP_H, dtype=bool)
-    for (x, y) in moves:
-        vector[x * MAP_H + y] = True
+    BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION,
+               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
+
+    current_tile = map_grid.get(pos, Field.NORMAL)
+    used_at_start = 1 if current_tile == Field.SNOW else 0
+
+    vector = np.zeros(len(DIRECTIONS) * max_stamina, dtype=np.int8)
+    x, y = pos
+
+    for dir_idx, (dx, dy) in enumerate(DIRECTIONS):
+        stamina = used_at_start
+        nx, ny = x, y
+        for step in range(max_stamina):
+            nx += dx
+            ny += dy
+            if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+                break
+            tile = map_grid.get((nx, ny), Field.NORMAL)
+            if tile in BLOCKED:
+                break
+            stamina += 2 if tile == Field.SNOW else 1
+            if stamina <= max_stamina:
+                vector[dir_idx * max_stamina + step] = 1
+            else:
+                break
+
     return vector
 
 
@@ -464,6 +488,8 @@ if __name__ == "__main__":
     for dest, cost in sorted(moves.items()):
         tile = map_grid.get(dest, Field.NORMAL)
         print(f"  X={dest[0]}  Y={dest[1]}  stamina={cost}  tile={tile.name}")
+
+    print(get_move_vector(map_grid, my_pos))
 
     # Moguce pozicije za summon
     cards = player.get("Cards") or []
