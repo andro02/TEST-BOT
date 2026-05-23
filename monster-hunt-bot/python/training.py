@@ -137,36 +137,25 @@ def is_collapse_tile(x, y, phase):
 def reward_fn(prev_state, next_state, done=False):
     reward = 0.0
 
-    # =========================================================
-    # SURVIVAL
-    # =========================================================
-
     hp_diff = next_state.health - prev_state.health
     reward += hp_diff * 0.15
+
+    opp_hp_diff = prev_state.opp_health - next_state.opp_health
+    reward += opp_hp_diff * 0.25
 
     # dying is VERY bad
     if next_state.health <= 0:
         reward -= 20.0
-
-    # =========================================================
-    # DAMAGE / PRESSURE
-    # =========================================================
 
     # opponent hp drop
     # estimated from xp gain
     xp_diff = next_state.xp - prev_state.xp
     reward += xp_diff * 0.2
 
-    # =========================================================
-    # LEVEL UPS
-    # =========================================================
 
     level_diff = next_state.level - prev_state.level
     reward += level_diff * 15.0
 
-    # =========================================================
-    # POSITIONING
-    # =========================================================
 
     prev_dist = (
         abs(prev_state.me_xy[0] - prev_state.opp_xy[0]) +
@@ -181,27 +170,15 @@ def reward_fn(prev_state, next_state, done=False):
     # reward approaching enemy slightly
     reward += (prev_dist - next_dist) * 0.05
 
-    # =========================================================
-    # ITEMS
-    # =========================================================
-
     reward += (
         len(next_state.inventory) -
         len(prev_state.inventory)
     ) * 1.5
 
-    # =========================================================
-    # CARDS
-    # =========================================================
-
     reward += (
         len(next_state.cards) -
         len(prev_state.cards)
     ) * 2.0
-
-    # =========================================================
-    # STATUS EFFECTS
-    # =========================================================
 
     prev_frozen = "Frozen" in prev_state.statuses
     next_frozen = "Frozen" in next_state.statuses
@@ -214,10 +191,6 @@ def reward_fn(prev_state, next_state, done=False):
 
     if not prev_confused and next_confused:
         reward -= 3.0
-
-    # =========================================================
-    # MAP DANGER
-    # =========================================================
 
     x, y = next_state.me_xy
     opp_x, opp_y = next_state.opp_xy
@@ -243,19 +216,11 @@ def reward_fn(prev_state, next_state, done=False):
     if turns_until_collapse <= 3 and is_collapse_tile(opp_x, opp_y, next_phase):
         reward += 4.0
 
-    # =========================================================
-    # TERMINAL
-    # =========================================================
-
     if done:
         if next_state.health > 0:
             reward += 50.0
         else:
             reward -= 50.0
-
-    # =========================================================
-    # CLAMP
-    # =========================================================
 
     reward = np.clip(reward, -50.0, 50.0)
 
