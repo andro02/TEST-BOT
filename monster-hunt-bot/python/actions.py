@@ -2,6 +2,8 @@
 # ACTION PARSER + API SENDER
 # =========================
 
+from state import *
+
 MOVE_START = 0
 PICKUP_START = 16
 USE_ITEM_START = 40
@@ -286,3 +288,124 @@ def send_api_command(base_url, game_id, command):
         raise Exception(f"API command failed: {response.status_code} {response.text}")
 
     return response.json() if response.text else None
+
+PICKUP_ITEM_NAMES = ["Potion", "Freeze", "Confusion", "Card1", "Card2", "Card3"]
+PICKUP_DIR_NAMES  = ["UP", "DOWN", "LEFT", "RIGHT"]
+
+def print_action_mask(mask):
+    m = np.asarray(mask, dtype=np.int8)
+
+    print("=== ACTION MASK ===")
+
+    # MOVE [0..15]  4 directions x 4 steps
+    print(f"\nMOVE [0..15]:")
+    for dir_idx, name in enumerate(DIRECTION_NAMES):
+        base = MOVE_START + dir_idx * 4
+        bits = m[base:base + 4].tolist()
+        reachable = [str(s + 1) for s, v in enumerate(bits) if v]
+        print(f"  {name:6s}: {bits}  -> steps {reachable if reachable else '—'}")
+
+    # PICKUP [16..39]  6 items x 4 directions
+    print(f"\nPICKUP [16..39]:")
+    for item_idx, item_name in enumerate(PICKUP_ITEM_NAMES):
+        base = PICKUP_START + item_idx * 4
+        bits = m[base:base + 4].tolist()
+        dirs = [PICKUP_DIR_NAMES[d] for d, v in enumerate(bits) if v]
+        print(f"  {item_name:10s}: {bits}  -> {dirs if dirs else '—'}")
+
+    # USE_ITEM [40..42]
+    print(f"\nUSE_ITEM [40..42]:")
+    for i, name in enumerate(["Potion", "Freeze", "Confusion"]):
+        print(f"  {name:10s}: {m[USE_ITEM_START + i]}")
+
+    # ATTACK_PLAYER [43]
+    print(f"\nATTACK_PLAYER [43]: {m[ATTACK_PLAYER_IDX]}")
+
+    # ATTACK_MONSTER [44..47]
+    print(f"\nATTACK_MONSTER [44..47]:")
+    for dir_idx, name in enumerate(DIRECTION_NAMES):
+        print(f"  {name:6s}: {m[ATTACK_MONSTER_START + dir_idx]}")
+
+    # SUMMON [48..59]  3 cards x 4 directions
+    print(f"\nSUMMON [48..59]:")
+    for card_idx in range(3):
+        base = SUMMON_START + card_idx * 4
+        bits = m[base:base + 4].tolist()
+        dirs = [DIRECTION_NAMES[d] for d, v in enumerate(bits) if v]
+        print(f"  Card{card_idx + 1}     : {bits}  -> {dirs if dirs else '—'}")
+
+    print(f"\nTotal: {m.sum()} valid actions / {len(m)}")
+    print("===================")
+
+
+if __name__ == "__main__":
+    url = "http://localhost:8080"
+    game_id = "13b432a2-ba8c-4241-9895-10429b187d2a"
+    bot_name = "asd"
+
+    response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
+    data = response.json() if response.status_code == 200 else None
+    if data is None:
+        raise Exception("Problem parsing state")
+
+    player_id = find_my_player_id(data, bot_name)
+
+    # # Napravi map_grid dict
+    # map_grid = {}
+    # for field in data["Map"]["Grid"]:
+    #     pos = field["Position"]
+    #     x, y = pos["X"], pos["Y"]
+    #     tile = convertToField(field, player_id)
+    #     map_grid[(x, y)] = tile if tile is not None else Field.NORMAL
+    # if player_id is None:
+    #     raise Exception(f"Igrac '{bot_name}' nije nadjen")
+
+    player = data["Players"][str(player_id)]
+    state = get_state(f"{url}/game/state/{game_id}", str(player_id))
+
+    # print_map(state.map)
+
+    my_pos = (player["Position"]["X"], player["Position"]["Y"])
+    print(f"Igrac '{bot_name}' ID={player_id} na poziciji {my_pos}")
+
+    # Moguca kretanja
+    moves = get_possible_moves(state.map, my_pos)
+    print(f"\nMoguca kretanja ({len(moves)}):")
+    for dest, cost in sorted(moves.items()):
+        tile = state.map[dest[0] * MAP_H + dest[1]]
+        print(f"  X={dest[0]}  Y={dest[1]}  stamina={cost}  tile={tile.name}")
+
+    print(get_move_vector(state.map, my_pos))
+
+    # Moguce pozicije za summon
+    cards = player.get("Cards") or []
+    summon_vecs = get_summon_vectors(state.map, my_pos, cards)
+
+    DIRECTION_NAMES = ["LEFT", "RIGHT", "UP", "DOWN"]
+    if summon_vecs:
+        for i, (card, vector) in enumerate(summon_vecs):
+            card_name = card.get("Name", "?")
+            card_id = card.get("Id", "?")
+            print(f"\nKarta [{i}] '{card_name}' (ID={card_id}) — vektor={vector.tolist()}:")
+            for dir_idx, can_summon in enumerate(vector):
+                if can_summon:
+                    dx, dy = DIRECTIONS[dir_idx]
+                    sx, sy = my_pos[0] + dx, my_pos[1] + dy
+                    tile = state.map[sx * MAP_H + sy]
+                    print(f"  {DIRECTION_NAMES[dir_idx]} -> X={sx}  Y={sy}  tile={tile.name}")
+    else:
+        print("\nNema dostupnih karata za postavljanje")
+
+    action_masks = get_possible_pickups(state, my_pos)
+    mask_vector = flatten_possible_pickups(action_masks)
+    print(mask_vector)
+    print(mask_vector.shape)  # (24,)
+
+    inventory_vector = get_inventory_vector(state.inventory)
+    print("\nInventory vector:")
+    print(inventory_vector)
+
+    print(state.can_attack_player())
+    print(state.monster_attack_vector())
+
+    print_action_mask(build_action_mask(state))

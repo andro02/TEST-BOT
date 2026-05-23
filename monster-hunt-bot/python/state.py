@@ -37,7 +37,6 @@ def convertToField(map_field, player_id):
             return Field.MONSTER_CARD_3
 
     if map_field["Entity"] is not None and "Name" in map_field["Entity"]:
-        print("ENTITY:", map_field["Entity"])
         if map_field["Entity"]["Name"] == "Ice cube":
             if map_field["Entity"]["SummonedByPlayerId"] == player_id:
                 return Field.MY_MONSTER_1
@@ -191,7 +190,6 @@ class State(object):
                 continue
 
             tile = self.map[nx * MAP_H + ny]
-            print(tile)
             if tile in [Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3]:
                 vector[i] = 1
 
@@ -564,7 +562,7 @@ if __name__ == "__main__":
     player = data["Players"][str(player_id)]
     state = get_state(f"{url}/game/state/{game_id}", str(player_id))
 
-    print_map(state.map)
+    # print_map(state.map)
 
     my_pos = (player["Position"]["X"], player["Position"]["Y"])
     print(f"Igrac '{bot_name}' ID={player_id} na poziciji {my_pos}")
