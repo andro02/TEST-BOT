@@ -182,7 +182,6 @@ def convertToField(map_field, player_id):
     return None
 
 
-
 def get_state(url, player_id):
     response = requests.get(url, timeout=5)
     data =  response.json() if response.status_code == 200 else None
@@ -215,13 +214,13 @@ def get_state(url, player_id):
     cooldowns = []
     for card in data["Players"][player_id]["Cards"]:
         if card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_1)
+            cards.append(Field.MONSTER_CARD_1)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_2)
+            cards.append(Field.MONSTER_CARD_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_3)
+            cards.append(Field.MONSTER_CARD_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
 
@@ -230,8 +229,6 @@ def get_state(url, player_id):
     opp_x, opp_y = data["Players"][other_key]["Position"]["X"], data["Players"][other_key]["Position"]["Y"]
     map[16 * me_x + me_y] = Field.ME
     map[16 * opp_x + opp_y] = Field.OPPONENT
-
-    print(map)
 
     return State(hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
@@ -250,22 +247,24 @@ MAP_W = 32
 MAP_H = 16
 
 
-def get_possible_moves(map_grid, pos, max_stamina=4):
+def get_possible_moves(state_map, pos, max_stamina=4):
     """
     Vraca sve dostupne pozicije kretanjem u jednom pravcu (gore/dole/levo/desno).
     Sneg kosta 2 staminu po polju, ostalo 1.
     WALL i EMPTY blokiraju kretanje.
     Vraca dict {(x, y): stamina_potrosena}.
     """
-    BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION, 
-               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
-               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3 }
+    BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION,
+               Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
+               Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3,
+               Field.OPPONENT}
 
-    current_tile = map_grid.get(pos, Field.NORMAL)
+    x, y = pos
+    current_tile = state_map[x * MAP_H + y]
     used_at_start = 1 if current_tile == Field.SNOW else 0
 
     moves = {}
-    x, y = pos
 
     for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
         stamina = used_at_start
@@ -275,7 +274,7 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
             ny += dy
             if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
                 break
-            tile = map_grid.get((nx, ny), Field.NORMAL)
+            tile = state_map[nx * MAP_H + ny]
             if tile in BLOCKED:
                 break
             stamina += 2 if tile == Field.SNOW else 1
@@ -289,21 +288,23 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
 # Vektor: [L1,L2,L3,L4, R1,R2,R3,R4, U1,U2,U3,U4, D1,D2,D3,D4]
 DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-def get_move_vector(map_grid, pos, max_stamina=4):
+def get_move_vector(state_map, pos, max_stamina=4):
     """
     Vraca numpy array oblika (4 * max_stamina,) = (16,).
     1 = moze da se pomeri na taj korak u tom pravcu, 0 = ne moze.
     Ako je korak N blokiran, koraci N+1..max_stamina su takodje 0.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION,
-               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
-               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
+               Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
+               Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3,
+               Field.OPPONENT}
 
-    current_tile = map_grid.get(pos, Field.NORMAL)
+    x, y = pos
+    current_tile = state_map[x * MAP_H + y]
     used_at_start = 1 if current_tile == Field.SNOW else 0
 
     vector = np.zeros(len(DIRECTIONS) * max_stamina, dtype=np.int8)
-    x, y = pos
 
     for dir_idx, (dx, dy) in enumerate(DIRECTIONS):
         stamina = used_at_start
@@ -313,7 +314,7 @@ def get_move_vector(map_grid, pos, max_stamina=4):
             ny += dy
             if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
                 break
-            tile = map_grid.get((nx, ny), Field.NORMAL)
+            tile = state_map[nx * MAP_H + ny]
             if tile in BLOCKED:
                 break
             stamina += 2 if tile == Field.SNOW else 1
@@ -325,14 +326,16 @@ def get_move_vector(map_grid, pos, max_stamina=4):
     return vector
 
 
-def get_summon_positions(map_grid, pos):
+def get_summon_positions(state_map, pos):
     """
     Vraca listu (x, y) pozicija na kojima se moze postaviti monster
     (jedno polje gore/dole/levo/desno, nije blokirano).
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
-               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3, 
-               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3 }
+               Field.POTION, Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
+               Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3,
+               Field.OPPONENT,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
     x, y = pos
     positions = []
@@ -340,20 +343,22 @@ def get_summon_positions(map_grid, pos):
         nx, ny = x + dx, y + dy
         if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
             continue
-        tile = map_grid.get((nx, ny), Field.NORMAL)
+        tile = state_map[nx * MAP_H + ny]
         if tile not in BLOCKED:
             positions.append((nx, ny))
     return positions
 
 
-def get_summon_vectors(map_grid, pos, cards):
+def get_summon_vectors(state_map, pos, cards):
     """
     Za svaku karticu koja nije na cooldown-u vraca vektor (4,) int8.
     Redosled: LEFT, RIGHT, UP, DOWN — 1 = moze da postavi, 0 = ne moze.
     Vraca listu [(card, np.array(4,)), ...] — jedan unos po dostupnoj karti.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
-               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.POTION, Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
+               Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3,
+               Field.OPPONENT,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
     x, y = pos
@@ -362,7 +367,7 @@ def get_summon_vectors(map_grid, pos, cards):
         nx, ny = x + dx, y + dy
         if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
             continue
-        tile = map_grid.get((nx, ny), Field.NORMAL)
+        tile = state_map[nx * MAP_H + ny]
         if tile not in BLOCKED:
             base_vector[dir_idx] = 1
 
@@ -475,48 +480,51 @@ if __name__ == "__main__":
     if data is None:
         raise Exception("Problem parsing state")
 
-    # Napravi map_grid dict
-    map_grid = {}
-    for field in data["Map"]["Grid"]:
-        pos = field["Position"]
-        x, y = pos["X"], pos["Y"]
-        tile = convertToField(field)
-        map_grid[(x, y)] = tile if tile is not None else Field.NORMAL
-
     player_id = find_my_player_id(data, bot_name)
-    if player_id is None:
-        raise Exception(f"Igrac '{bot_name}' nije nadjen")
+
+    # # Napravi map_grid dict
+    # map_grid = {}
+    # for field in data["Map"]["Grid"]:
+    #     pos = field["Position"]
+    #     x, y = pos["X"], pos["Y"]
+    #     tile = convertToField(field, player_id)
+    #     map_grid[(x, y)] = tile if tile is not None else Field.NORMAL
+    # if player_id is None:
+    #     raise Exception(f"Igrac '{bot_name}' nije nadjen")
 
     player = data["Players"][str(player_id)]
     state = get_state(f"{url}/game/state/{game_id}", str(player_id))
 
     # state.map iz get_state je trenutno lista, pickup hoce dict
-    state.map = map_grid
+    # state.map = state.map
     my_pos = (player["Position"]["X"], player["Position"]["Y"])
     print(f"Igrac '{bot_name}' ID={player_id} na poziciji {my_pos}")
 
     # Moguca kretanja
-    moves = get_possible_moves(map_grid, my_pos)
+    moves = get_possible_moves(state.map, my_pos)
     print(f"\nMoguca kretanja ({len(moves)}):")
     for dest, cost in sorted(moves.items()):
-        tile = map_grid.get(dest, Field.NORMAL)
+        tile = state.map[dest[0] * MAP_H + dest[1]]
         print(f"  X={dest[0]}  Y={dest[1]}  stamina={cost}  tile={tile.name}")
 
-    print(get_move_vector(map_grid, my_pos))
+    print(get_move_vector(state.map, my_pos))
 
     # Moguce pozicije za summon
     cards = player.get("Cards") or []
-    summon_vecs = get_summon_vectors(map_grid, my_pos, cards)
+    summon_vecs = get_summon_vectors(state.map, my_pos, cards)
 
+    DIRECTION_NAMES = ["LEFT", "RIGHT", "UP", "DOWN"]
     if summon_vecs:
         for i, (card, vector) in enumerate(summon_vecs):
             card_name = card.get("Name", "?")
             card_id = card.get("Id", "?")
-            true_positions = [(x, y) for x in range(MAP_W) for y in range(MAP_H) if vector[x * MAP_H + y]]
-            print(f"\nKarta [{i}] '{card_name}' (ID={card_id}) — True={vector.sum()} pozicija:")
-            for (sx, sy) in true_positions:
-                tile = map_grid.get((sx, sy), Field.NORMAL)
-                print(f"  X={sx}  Y={sy}  tile={tile.name}")
+            print(f"\nKarta [{i}] '{card_name}' (ID={card_id}) — vektor={vector.tolist()}:")
+            for dir_idx, can_summon in enumerate(vector):
+                if can_summon:
+                    dx, dy = DIRECTIONS[dir_idx]
+                    sx, sy = my_pos[0] + dx, my_pos[1] + dy
+                    tile = state.map[sx * MAP_H + sy]
+                    print(f"  {DIRECTION_NAMES[dir_idx]} -> X={sx}  Y={sy}  tile={tile.name}")
     else:
         print("\nNema dostupnih karata za postavljanje")
 
