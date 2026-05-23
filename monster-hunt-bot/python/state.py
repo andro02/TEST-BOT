@@ -119,6 +119,37 @@ class State(object):
         self.statuses = statuses
         self.statuses_lasting = statuses_lasting
 
+    def get_state_vector(self):
+        state_vector = np.concatenate([
+            np.array([
+                self.health,
+                self.level,
+                self.xp
+            ]),
+
+            # inventory
+            np.array(self.inventory),
+
+            # cards
+            np.array(self.cards),
+
+            # monsters
+            np.array(self.monsters),
+
+            # cooldowns
+            np.array(self.monster_cooldowns),
+
+            # map flattened
+            np.array(self.map),
+
+            # statuses
+            np.array(self.statuses),
+
+            # statuses lasting
+            np.array(self.statuses_lasting)
+        ])
+        return state_vector
+
 
 def get_state(url, player_id):
     response = requests.get(url, timeout=5)
