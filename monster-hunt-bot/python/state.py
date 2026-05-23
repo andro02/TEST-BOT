@@ -23,7 +23,7 @@ class TileType(Enum):
 def convertToField(map_field):
 
     if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
-        if map_field["Item"]["Name"] == "Kristal ?ivota":
+        if map_field["Item"]["Name"] == "Kristal života":
             return Field.POTION
         elif map_field["Item"]["Name"] == "Freeze scroll":
             return Field.FREEZE
@@ -242,8 +242,8 @@ def get_summon_vectors(map_grid, pos, cards):
 
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "8339a17b-7b27-489b-9746-2ca203ab6849"
-    bot_name = "dsa"
+    game_id = "8fdc0d80-7c5c-4cd8-835f-40f4a4f8fcd5"
+    bot_name = "asd"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
     data = response.json() if response.status_code == 200 else None
