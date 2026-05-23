@@ -202,14 +202,7 @@ class State(object):
         return vector
 
 
-def get_state(url, player_id):
-    response = requests.get(url, timeout=5)
-    data =  response.json() if response.status_code == 200 else None
-    if data is None:
-        raise Exception("Problem parsing state")
-
-    # Newtonsoft.Json salje entitete kao {"$ref": "4"} umesto celog objekta.
-    # Prolazimo kroz ceo JSON i pamtimo sve objekte sa "$id" kljucem.
+def parse_state(data, player_id):
     id_to_entity = {}
     def collect_ids(obj):
         if isinstance(obj, dict):
@@ -236,7 +229,6 @@ def get_state(url, player_id):
     hp = data["Players"][player_id]["Health"]
     max_hp = data["Players"][player_id]["MaxHealth"]
     attack_dmg = data["Players"][player_id]["AttackPower"]
-
     xp = data["Players"][player_id]["Xp"]
     level = data["Players"][player_id]["Level"]
 
@@ -265,14 +257,22 @@ def get_state(url, player_id):
             cards.append(Field.MONSTER_CARD_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
-
     other_key = next(k for k in data["Players"] if k != player_id)
     me_x, me_y = data["Players"][player_id]["Position"]["X"], data["Players"][player_id]["Position"]["Y"]
     opp_x, opp_y = data["Players"][other_key]["Position"]["X"], data["Players"][other_key]["Position"]["Y"]
     map[16 * me_x + me_y] = Field.ME
     map[16 * opp_x + opp_y] = Field.OPPONENT
 
-    return State(player_id, other_key, max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
+    return State(player_id, other_key, max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns,
+                 map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
+
+
+def get_state(url, player_id):
+    response = requests.get(url, timeout=5)
+    data = response.json() if response.status_code == 200 else None
+    if data is None:
+        raise Exception("Problem parsing state")
+    return parse_state(data, player_id)
 
 
 def find_my_player_id(game_state, bot_name):
