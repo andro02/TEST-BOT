@@ -180,7 +180,7 @@ def main():
             next_state = parse_state(next_raw, current_id)  # koristi GET #2, bez novog zahteva
             reward = reward_fn(prev_state, next_state, done)
 
-            print_turn(gs, player_name, command, next_state, reward)
+            # print_turn(gs, player_name, command, next_state, reward)
 
             memory["obs"].append(obs)
             memory["actions"].append(action_idx)
