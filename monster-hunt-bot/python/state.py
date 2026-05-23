@@ -132,40 +132,46 @@ class State(object):
         self.me_xy = me_xy
         self.opp_xy = opp_xy
 
+    # Poznati statusi — za fiksnu enkodiranu poziciju u vektoru
+    _STATUS_IDX = {"Confused": 0, "Frozen": 1}
+    _MAX_STATUSES = 2
+    _MAX_INVENTORY = 3
+    _MAX_CARDS = 3
+
     def get_state_vector(self):
-        state_vector = np.concatenate([
-            np.array([
-                self.health,
-                self.level,
-                self.xp,
-                self.max_health,
-                self.attack_dmg
-            ]),
+        # inventory: Field enum -> .value, pad na 3
+        inv = [f.value for f in self.inventory]
+        inv += [0] * (self._MAX_INVENTORY - len(inv))
 
-            # inventory
-            np.array(self.inventory),
+        # cards: Field enum -> .value, pad na 3
+        cards = [f.value for f in self.cards]
+        cards += [0] * (self._MAX_CARDS - len(cards))
 
-            # cards
-            np.array(self.cards),
+        # cooldowns: pad na 3
+        cds = list(self.monster_cooldowns)
+        cds += [0] * (self._MAX_CARDS - len(cds))
 
-            # monsters
-            np.array(self.monsters),
+        # statuses: svaki poznati status dobija slot za trajanje (0 = neaktivan)
+        status_vec = [0] * self._MAX_STATUSES
+        for name, duration in zip(self.statuses, self.statuses_lasting):
+            idx = self._STATUS_IDX.get(name)
+            if idx is not None:
+                status_vec[idx] = int(duration)
 
-            # cooldowns
-            np.array(self.monster_cooldowns),
+        # map: Field enum -> .value (512 elemenata)
+        map_vals = [f.value for f in self.map]
 
-            # map flattened
-            np.array(self.map),
-
-            # statuses
-            np.array(self.statuses),
-
-            # statuses lasting
-            np.array(self.statuses_lasting),
-            np.array(self.me_xy),
-            np.array(self.opp_xy)
-
-        ])
+        state_vector = np.array(
+            [self.health, self.level, self.xp, self.max_health, self.attack_dmg]
+            + inv
+            + cards
+            + cds
+            + map_vals
+            + status_vec
+            + list(self.me_xy)
+            + list(self.opp_xy),
+            dtype=np.float32
+        )
         return state_vector
 
     def can_attack_player(self):

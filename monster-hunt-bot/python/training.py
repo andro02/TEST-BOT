@@ -100,57 +100,57 @@ def main():
     print(f"Player ID: {player_id}")
 
     state = get_state(state_url, player_id)
-    # obs_dim = len(state.get_state_vector())
+    obs_dim = len(state.get_state_vector())
 
-    # agent = PPO(obs_dim=obs_dim, action_dim=60)
+    agent = PPO(obs_dim=obs_dim, action_dim=60)
 
-    # for update in range(TOTAL_UPDATES):
-    #     memory = make_memory()
+    for update in range(TOTAL_UPDATES):
+        memory = make_memory()
 
-    #     for step in range(ROLLOUT_STEPS):
-    #         state = get_state(state_url, player_id)
+        for step in range(ROLLOUT_STEPS):
+            state = get_state(state_url, player_id)
 
-    #         obs = state.get_state_vector()
-    #         mask = build_action_mask(state)
+            obs = state.get_state_vector()
+            mask = build_action_mask(state)
 
-    #         action_idx, logprob, value = agent.model.act(obs, mask)
+            action_idx, logprob, value = agent.model.act(obs, mask)
 
-    #         command = action_index_to_command(action_idx, state)
+            command = action_index_to_command(action_idx, state)
 
-    #         prev_state = state
+            prev_state = state
 
-    #         try:
-    #             send_api_command(BASE_URL, game_id, command)
-    #         except Exception as e:
-    #             print("Bad action:", command, e)
+            try:
+                send_api_command(BASE_URL, game_id, command)
+            except Exception as e:
+                print("Bad action:", command, e)
 
-    #         time.sleep(0.05)
+            time.sleep(0.05)
 
-    #         next_state = get_state(state_url, player_id)
+            next_state = get_state(state_url, player_id)
 
-    #         done = False
-    #         reward = reward_fn(prev_state, next_state, done)
+            done = False
+            reward = reward_fn(prev_state, next_state, done)
 
-    #         memory["obs"].append(obs)
-    #         memory["actions"].append(action_idx)
-    #         memory["logprobs"].append(logprob)
-    #         memory["values"].append(value)
-    #         memory["rewards"].append(reward)
-    #         memory["dones"].append(done)
-    #         memory["masks"].append(mask)
+            memory["obs"].append(obs)
+            memory["actions"].append(action_idx)
+            memory["logprobs"].append(logprob)
+            memory["values"].append(value)
+            memory["rewards"].append(reward)
+            memory["dones"].append(done)
+            memory["masks"].append(mask)
 
-    #     next_obs = next_state.get_state_vector()
-    #     next_mask = build_action_mask(next_state)
+        next_obs = next_state.get_state_vector()
+        next_mask = build_action_mask(next_state)
 
-    #     _, _, next_value = agent.model.act(next_obs, next_mask)
+        _, _, next_value = agent.model.act(next_obs, next_mask)
 
-    #     agent.update(memory, next_value)
+        agent.update(memory, next_value)
 
-    #     if update % 10 == 0:
-    #         agent.save("ppo_model.pt")
-    #         print(f"Saved update {update}")
+        if update % 10 == 0:
+            agent.save("ppo_model.pt")
+            print(f"Saved update {update}")
 
-    # agent.save("ppo_model_final.pt")
+    agent.save("ppo_model_final.pt")
 
 
 if __name__ == "__main__":
