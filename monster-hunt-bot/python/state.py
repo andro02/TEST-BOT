@@ -32,10 +32,18 @@ def convertToField(map_field):
 
     if map_field["MonsterCard"] is not None:
         if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_1
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_2
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+            return Field.MONSTER_CARD_3
+
+    if map_field["Entity"] is not None:
+        if map_field["Entity"]["Name"] == "Ice cube":
             return Field.MONSTER_1
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+        elif map_field["Entity"]["Name"] == "Ice cube":
             return Field.MONSTER_2
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+        elif map_field["Entity"]["Name"] == "Ice cube":
             return Field.MONSTER_3
         
     if map_field["FieldType"]  == TileType.NORMAL.value:

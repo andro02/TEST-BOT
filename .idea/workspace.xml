@@ -4,7 +4,6 @@
     <list default="true" id="e2572c0c-61c7-4317-b859-a098c92043d2" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/monster-hunt-bot/python/state.py" beforeDir="false" afterPath="$PROJECT_DIR$/monster-hunt-bot/python/state.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/monster-hunt-bot/python/state2.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -30,7 +29,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "master",
+    "git-widget-placeholder": "feat/added/more-to-states",
     "last_opened_file_path": "/media/nemanja3214/E/AIBG/TEST-BOT"
   }
 }]]></component>
