@@ -459,10 +459,31 @@ def flatten_possible_pickups(masks):
 
     return np.array(result, dtype=np.int8)
 
+def get_inventory_vector(inventory):
+    """
+    Vraca vektor [POTION, FREEZE, CONFUSION]
+
+    1 = imam bar jedan
+    0 = nemam
+    """
+
+    vector = np.zeros(3, dtype=np.int8)
+
+    if Field.POTION in inventory:
+        vector[0] = 1
+
+    if Field.FREEZE in inventory:
+        vector[1] = 1
+
+    if Field.CONFUSION in inventory:
+        vector[2] = 1
+
+    return vector
+
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "a70eec86-9fae-4f25-8ad4-84357d435578"
-    bot_name = "dsa"
+    game_id = "02b4a2d7-81c6-4bbc-9872-0664621dc67b"
+    bot_name = "asd"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
     data = response.json() if response.status_code == 200 else None
@@ -521,3 +542,7 @@ if __name__ == "__main__":
     mask_vector = flatten_possible_pickups(action_masks)
     print(mask_vector)
     print(mask_vector.shape)  # (24,)
+
+    inventory_vector = get_inventory_vector(state.inventory)
+    print("\nInventory vector:")
+    print(inventory_vector)
