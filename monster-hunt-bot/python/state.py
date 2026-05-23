@@ -34,9 +34,9 @@ def convertToField(map_field):
         if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
             return Field.MONSTER_1
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_1
+            return Field.MONSTER_2
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
-            return Field.MONSTER_1
+            return Field.MONSTER_3
         
     if map_field["FieldType"]  == TileType.NORMAL.value:
         return Field.NORMAL
@@ -69,6 +69,13 @@ class Field(Enum):
     MONSTER_1 = 9
     MONSTER_2 = 10
     MONSTER_3 = 11
+#   MONSTER CARDS
+    MONSTER_CARD_1 = 12
+    MONSTER_CARD_2 = 13
+    MONSTER_CARD_3 = 14
+#   PLAYERS
+    ME = 15
+    OPPONENT = 16
 
 class State(object):
     def __init__(self, health, level, xp, inventory, cards, monsters, monster_cooldowns, map, statuses, statuses_lasting):
@@ -158,6 +165,15 @@ def get_state(url, player_id):
             if field["Entity"]["Name"] == "Card of Ice Cubes"  and field["Entity"]["SummonedByPlayerId"] == player_id:
                 monster3 += 1
     monsters_count = [monster1, monster2, monster3]
+
+
+    other_key = next(k for k in data["Players"] if k != player_id)
+    me_x, me_y = data["Players"][player_id]["X"], data["Players"][player_id]["Y"]
+    opp_x, opp_y = data["Players"][other_key]["X"], data["Players"][other_key]["Y"]
+    map[32 * me_x + me_y] = Field.ME
+    map[32 * opp_x + opp_y] = Field.OPPONENT
+
+
 
     print(map)
 
