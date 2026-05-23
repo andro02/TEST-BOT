@@ -95,7 +95,7 @@ class Field(Enum):
     ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, item_ids, cards, card_ids, monster_cooldowns, map, enemy_monster_ids_by_pos, statuses, statuses_lasting, me_xy, opp_xy):
+    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, item_ids, cards, card_ids, monster_cooldowns, map, enemy_monster_ids_by_pos, statuses, statuses_lasting, me_xy, opp_xy, opp_health):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -132,6 +132,7 @@ class State(object):
         self.statuses_lasting = statuses_lasting
         self.me_xy = me_xy
         self.opp_xy = opp_xy
+        self.opp_health = opp_health
 
     # Poznati statusi — za fiksnu enkodiranu poziciju u vektoru
     _STATUS_IDX = {"Confused": 0, "Frozen": 1}
@@ -163,7 +164,7 @@ class State(object):
         map_vals = [f.value for f in self.map]
 
         state_vector = np.array(
-            [self.turn_counter, self.health, self.level, self.xp, self.max_health, self.attack_dmg]
+            [self.turn_counter, self.health, self.opp_health, self.level, self.xp, self.max_health, self.attack_dmg]
             + inv
             + cards
             + cds
@@ -274,6 +275,7 @@ def parse_state(data, player_id):
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
     other_key = next(k for k in data["Players"] if k != player_id)
+    opp_hp = data["Players"][other_key]["Health"]
     me_x, me_y = data["Players"][player_id]["Position"]["X"], data["Players"][player_id]["Position"]["Y"]
     opp_x, opp_y = data["Players"][other_key]["Position"]["X"], data["Players"][other_key]["Position"]["Y"]
     map[16 * me_x + me_y] = Field.ME
@@ -282,7 +284,7 @@ def parse_state(data, player_id):
 
     return State(data["TurnCounter"], player_id, other_key, max_hp, attack_dmg, hp, level, xp,
                  inventory, item_ids, cards, card_ids, cooldowns,
-                 map, enemy_monster_ids_by_pos, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
+                 map, enemy_monster_ids_by_pos, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y), opp_hp)
 
 
 def get_state(url, player_id):
@@ -563,7 +565,7 @@ def print_map(state_map):
 
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "13b432a2-ba8c-4241-9895-10429b187d2a"
+    game_id = "9c5d0c98-223f-44ea-b183-3d5a608423fd"
     bot_name = "asd"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
@@ -630,3 +632,4 @@ if __name__ == "__main__":
 
     print(state.can_attack_player())
     print(state.monster_attack_vector())
+
