@@ -188,11 +188,6 @@ def main():
             raw = requests.get(state_url, timeout=5).json()  # GET #1
             gs = raw.get("GameState", "")
 
-            if gs == "Ending":
-                memory["dones"][-1] = 1 if memory["dones"] else 0
-                game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
-                gs = raw.get("GameState", "")
-
             if gs == "Player1Turn":
                 current_id = p1_id
                 player_name = BOT1_NAME
@@ -233,6 +228,19 @@ def main():
             memory["rewards"].append(reward)
             memory["dones"].append(int(done))
             memory["masks"].append(mask)
+
+            if done:
+                game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(
+                    BASE_URL,
+                    BOT1_NAME,
+                    BOT2_NAME
+                )
+
+                last_state = parse_state(raw, p1_id)
+            else:
+                last_state = next_state
+
+            steps_collected += 1
 
             last_state = next_state
             steps_collected += 1
