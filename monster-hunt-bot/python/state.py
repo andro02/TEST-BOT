@@ -36,7 +36,8 @@ def convertToField(map_field, player_id):
         elif "card" in map_field["MonsterCard"]["Name"]:
             return Field.MONSTER_CARD_3
 
-    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
+    if map_field["Entity"] is not None and "Name" in map_field["Entity"]:
+        print("ENTITY:", map_field["Entity"])
         if map_field["Entity"]["Name"] == "Ice cube":
             if map_field["Entity"]["SummonedByPlayerId"] == player_id:
                 return Field.MY_MONSTER_1
@@ -188,7 +189,7 @@ class State(object):
                 continue
 
             tile = self.map[nx * MAP_H + ny]
-
+            print(tile)
             if tile in [Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3]:
                 vector[i] = 1
 
@@ -201,9 +202,30 @@ def get_state(url, player_id):
     if data is None:
         raise Exception("Problem parsing state")
 
+    # Newtonsoft.Json salje entitete kao {"$ref": "4"} umesto celog objekta.
+    # Prolazimo kroz ceo JSON i pamtimo sve objekte sa "$id" kljucem.
+    id_to_entity = {}
+    def collect_ids(obj):
+        if isinstance(obj, dict):
+            if "$id" in obj:
+                id_to_entity[obj["$id"]] = obj
+            for v in obj.values():
+                collect_ids(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                collect_ids(item)
+    collect_ids(data)
+
     map = []
     for field in data["Map"]["Grid"]:
-        map.append(convertToField(field, player_id))
+        entity = field.get("Entity")
+        if isinstance(entity, dict) and "$ref" in entity:
+            resolved = id_to_entity.get(entity["$ref"])
+            if resolved:
+                field = dict(field)
+                field["Entity"] = resolved
+        tile = convertToField(field, player_id)
+        map.append(tile if tile is not None else Field.NORMAL)
 
     hp = data["Players"][player_id]["Health"]
     max_hp = data["Players"][player_id]["MaxHealth"]
@@ -459,10 +481,45 @@ def flatten_possible_pickups(masks):
 
     return np.array(result, dtype=np.int8)
 
+
+_FIELD_CHAR = {
+    Field.NORMAL:          " .",
+    Field.SNOW:            "~~",
+    Field.SPIKES:          "^^",
+    Field.WALL:            "##",
+    Field.EMPTY:           "  ",
+    Field.POTION:          "PO",
+    Field.CONFUSION:       "DZ",
+    Field.FREEZE:          "FR",
+    Field.MY_MONSTER_1:    "M1",
+    Field.MY_MONSTER_2:    "M2",
+    Field.MY_MONSTER_3:    "M3",
+    Field.MONSTER_CARD_1:  "C1",
+    Field.MONSTER_CARD_2:  "C2",
+    Field.MONSTER_CARD_3:  "C3",
+    Field.ME:              "ME",
+    Field.OPPONENT:        "OP",
+    Field.ENEMY_MONSTER_1: "E1",
+    Field.ENEMY_MONSTER_2: "E2",
+    Field.ENEMY_MONSTER_3: "E3",
+}
+
+def print_map(state_map):
+    print("    " + "".join(f"{x:2d}" for x in range(MAP_W)))
+    print("    " + "--" * MAP_W)
+    for y in range(MAP_H):
+        row = f"{y:2d} |"
+        for x in range(MAP_W):
+            tile = state_map[x * MAP_H + y]
+            row += _FIELD_CHAR.get(tile, "??")
+        print(row)
+    print()
+
+
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "a70eec86-9fae-4f25-8ad4-84357d435578"
-    bot_name = "dsa"
+    game_id = "13b432a2-ba8c-4241-9895-10429b187d2a"
+    bot_name = "asd"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
     data = response.json() if response.status_code == 200 else None
@@ -484,8 +541,8 @@ if __name__ == "__main__":
     player = data["Players"][str(player_id)]
     state = get_state(f"{url}/game/state/{game_id}", str(player_id))
 
-    # state.map iz get_state je trenutno lista, pickup hoce dict
-    # state.map = state.map
+    print_map(state.map)
+
     my_pos = (player["Position"]["X"], player["Position"]["Y"])
     print(f"Igrac '{bot_name}' ID={player_id} na poziciji {my_pos}")
 
@@ -521,3 +578,6 @@ if __name__ == "__main__":
     mask_vector = flatten_possible_pickups(action_masks)
     print(mask_vector)
     print(mask_vector.shape)  # (24,)
+
+    print(state.can_attack_player())
+    print(state.monster_attack_vector())
