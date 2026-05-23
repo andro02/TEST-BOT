@@ -198,7 +198,9 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
     WALL i EMPTY blokiraju kretanje.
     Vraca dict {(x, y): stamina_potrosena}.
     """
-    BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3 }
+    BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION, 
+               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3 }
 
     current_tile = map_grid.get(pos, Field.NORMAL)
     used_at_start = 1 if current_tile == Field.SNOW else 0
@@ -242,7 +244,8 @@ def get_summon_positions(map_grid, pos):
     (jedno polje gore/dole/levo/desno, nije blokirano).
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
-               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3}
+               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3, 
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3 }
 
     x, y = pos
     positions = []
