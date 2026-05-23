@@ -31,9 +31,9 @@ def convertToField(map_field, player_id):
     if map_field["MonsterCard"] is not None:
         if map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
             return Field.MONSTER_CARD_1
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Mage":
             return Field.MONSTER_CARD_2
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
+        elif map_field["MonsterCard"]["Name"] == "Card of Ice Warrior":
             return Field.MONSTER_CARD_3
 
     if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
@@ -42,12 +42,12 @@ def convertToField(map_field, player_id):
                 return Field.MY_MONSTER_1
             else:
                 return Field.ENEMY_MONSTER_1
-        elif map_field["Entity"]["Name"] == "Ice cube":
+        elif map_field["Entity"]["Name"] == "Ice Mage":
             if map_field["Entity"]["SummonedByPlayerId"] == player_id:
                 return Field.MY_MONSTER_2
             else:
                 return Field.ENEMY_MONSTER_2
-        elif map_field["Entity"]["Name"] == "Ice cube":
+        elif map_field["Entity"]["Name"] == "Ice Warrior":
             if map_field["Entity"]["SummonedByPlayerId"] == player_id:
                 return Field.MY_MONSTER_3
             else:
@@ -95,7 +95,7 @@ class Field(Enum):
     ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
+    def __init__(self,max_health, attack_dmg, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -111,6 +111,8 @@ class State(object):
         # self.map = np.zeros((32, 16))
         # # koji status imam i koliko traje jos
         # self.status = [0, 0]
+        self.max_health = max_health
+        self.attack_dmg = attack_dmg
         self.health = health
         self.level = level
         self.xp = xp
@@ -175,6 +177,7 @@ def get_state(url, player_id):
 
     hp = data["Players"][player_id]["Health"]
     max_hp = data["Players"][player_id]["MaxHealth"]
+    attack_dmg = data["Players"][player_id]["AttackPower"]
 
     xp = data["Players"][player_id]["Xp"]
     level = data["Players"][player_id]["Level"]
@@ -197,10 +200,10 @@ def get_state(url, player_id):
         if card["Name"] == "Card of Ice Cubes":
             cards.append(Field.MONSTER_CARD_1)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
-        elif card["Name"] == "Card of Ice Cubes":
+        elif card["Name"] == "Card of Ice Mage":
             cards.append(Field.MONSTER_CARD_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
-        elif card["Name"] == "Card of Ice Cubes":
+        elif card["Name"] == "Card of Ice Warrior":
             cards.append(Field.MONSTER_CARD_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
@@ -211,7 +214,7 @@ def get_state(url, player_id):
     map[16 * me_x + me_y] = Field.ME
     map[16 * opp_x + opp_y] = Field.OPPONENT
 
-    return State(hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
+    return State(max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
 
 def find_my_player_id(game_state, bot_name):
