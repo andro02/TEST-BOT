@@ -350,14 +350,23 @@ def get_summon_positions(map_grid, pos):
 
 def get_summon_vectors(map_grid, pos, cards):
     """
-    Za svaku karticu iz inventory-a koja nije na cooldown-u vraca vektor (512,) bool.
-    Vraca listu [(card, np.array(512, bool)), ...] — jedan unos po dostupnoj karti.
+    Za svaku karticu koja nije na cooldown-u vraca vektor (4,) int8.
+    Redosled: LEFT, RIGHT, UP, DOWN — 1 = moze da postavi, 0 = ne moze.
+    Vraca listu [(card, np.array(4,)), ...] — jedan unos po dostupnoj karti.
     """
-    positions = get_summon_positions(map_grid, pos)
+    BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
+               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
-    base_vector = np.zeros(MAP_W * MAP_H, dtype=bool)
-    for (x, y) in positions:
-        base_vector[x * MAP_H + y] = True
+    x, y = pos
+    base_vector = np.zeros(len(DIRECTIONS), dtype=np.int8)
+    for dir_idx, (dx, dy) in enumerate(DIRECTIONS):
+        nx, ny = x + dx, y + dy
+        if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+            continue
+        tile = map_grid.get((nx, ny), Field.NORMAL)
+        if tile not in BLOCKED:
+            base_vector[dir_idx] = 1
 
     result = []
     for card in cards:
