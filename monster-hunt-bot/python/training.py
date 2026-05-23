@@ -236,19 +236,13 @@ def main():
             memory["masks"].append(mask)
 
             if done:
-                game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(
-                    BASE_URL,
-                    BOT1_NAME,
-                    BOT2_NAME
+                game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(
+                    BASE_URL, BOT1_NAME, BOT2_NAME
                 )
-
-                last_state = parse_state(raw, p1_id)
+                last_state = parse_state(current_raw, p1_id)
             else:
                 last_state = next_state
 
-            steps_collected += 1
-
-            last_state = next_state
             steps_collected += 1
 
         # Bootstrap vrednost za poslednji state
