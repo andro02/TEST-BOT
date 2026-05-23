@@ -1,4 +1,4 @@
-# Monster Hunt Bot - API Dokumentacija
+# Monster Hunt Bot - Dokumentacija
 
 ## Preuzimanje sa Git Repozitorijuma
 
@@ -9,7 +9,6 @@ git clone https://github.com/ParadoxBosmer/TEST-BOT.git
 ```
 Unutra postoje modeli koji vam mogu poslužiti za rad kao i kosturi za dozvoljene programske jezike. 
 
----
 
 ## Objašnjenje toka poteza
 
@@ -119,7 +118,7 @@ Prizovite monstruma iz kartice.
 
 ---
 
-## Podaci za Strategiju
+## Sadržajmape
 
 **Svaki PUT endpoint automatski vraća kompletno stanje igre** koje sadrži:
 
@@ -145,43 +144,52 @@ Lista svih polja na mapi sa informacijama o preprekama:
 
 ### Python
 ```bash
-cd python
 pip install requests
 python bot_template.py http://localhost:8080 game123 MojBot
 ```
 
 ### JavaScript
 ```bash
-cd javascript
+
 npm install axios
 node bot_template.js http://localhost:8080 game123 MojBot
 ```
 
 ### C#
 ```bash
-cd csharp
 dotnet run http://localhost:8080 game123 MojBot
 ```
 
 ### Java
 ```bash
-cd java
 mvn clean package
 java -jar target/bot-template-1.0-SNAPSHOT.jar http://localhost:8080 game123 MojBot
 ```
 
 ### Go
 ```bash
-cd go
 go run bot_template.go http://localhost:8080 game123 MojBot
 ```
 
 ### C++
 ```bash
-cd cpp
 mkdir build && cd build
 cmake ..
 make
 ./bot_template http://localhost:8080 game123 MojBot
 ```
 
+## **VAŽNO - Pravila za Predaju Fajlova**
+
+**Prilikom predaje fajlova, obavezno dodajte sufiks sa imenom programskog jezika:**
+- Format: `naziv_fajla_{programski_jezik}.ekstenzija`
+- Primeri:
+  - `bot_template_python.py`
+  - `bot_template_java.jar`
+  - `bot_template_csharp.exe`
+  - `bot_template_cplusplus.exe`
+  - `bot_template_javascript.js`
+  - `bot_template_cpp.exe`
+  - `bot_template_go.exe`
+
+---
