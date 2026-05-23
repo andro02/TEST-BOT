@@ -87,17 +87,26 @@ class PPO:
         self.entropy_coef = entropy_coef
 
     def compute_gae(self, rewards, values, dones, next_value):
-        advantages = []
-        gae = 0
+        n = len(rewards)
 
-        values = values + [next_value]
+        advantages = [0.0] * n
+        returns = [0.0] * n
 
-        for t in reversed(range(len(rewards))):
-            delta = rewards[t] + self.gamma * values[t + 1] * (1 - dones[t]) - values[t]
-            gae = delta + self.gamma * self.gae_lambda * (1 - dones[t]) * gae
-            advantages.insert(0, gae)
+        gae = 0.0
+        next_val = next_value
 
-        returns = [adv + val for adv, val in zip(advantages, values[:-1])]
+        for t in range(n - 1, -1, -1):
+            not_done = 1.0 - dones[t]
+
+            delta = rewards[t] + self.gamma * next_val * not_done - values[t]
+
+            gae = delta + self.gamma * self.gae_lambda * not_done * gae
+
+            advantages[t] = gae
+            returns[t] = gae + values[t]
+
+            next_val = values[t]
+
         return advantages, returns
 
     def update(self, memory, next_value):
