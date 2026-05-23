@@ -35,6 +35,7 @@ class BotTemplate:
             return False
         is_first = my_player.get('First', False)
         game_state_str = game_state.get('GameState', '')
+        print(game_state_str, is_first)
         return (is_first and game_state_str == 'Player1Turn') or (not is_first and game_state_str == 'Player2Turn')
     
     def is_game_over(self, game_state):
@@ -42,31 +43,62 @@ class BotTemplate:
         if not game_state:
             return False
         return game_state.get('GameState', '') == 'Ending'
+    
+    def put_player(self):
+        url = f"{self.server_url}/player/move/gameId/{self.game_id}"
+        payload = {"playerId": 1, "newPosition": {"x": 5, "y": 7}}  
+        response = requests.post(url, json=payload, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            print(data)
+        else:
+            print(f"Failed to join game: {response.status_code} - {response.text}")
+            return False
+        
+def start_game(server_url, bot_name):
+    url = f"{server_url}/game/start/names?player1Name={bot_name}&player2Name=AI"
+    try:
+        r = requests.get(url, timeout=5)
+        return r.json() if r.status_code == 200 else None
+    except Exception as e:
+        print(f"Start game error: {e}")
+        return None
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: python bot_template.py <server_url> <game_id> <bot_name>")
+        print("Usage: python bot.py <server_url> <game_id> <bot_name>")
         sys.exit(1)
-    
-    bot = BotTemplate(sys.argv[1], sys.argv[2], sys.argv[3])
-    
-    while not (state := bot.get_game_state()) or not bot.find_my_player_id(state):
+
+    server_url = sys.argv[1]
+    bot_name = sys.argv[3]
+
+    game_data = start_game(server_url, bot_name)
+    if not game_data:
+        print("Failed to start game")
+        sys.exit(1)
+
+    game_id = game_data["gameId"]
+    print(f"Game started: {game_id}")
+
+    bot = BotTemplate(server_url, game_id, bot_name)
+
+    state = None
+    print("Waiting for game state...")
+    while not state or not bot.find_my_player_id(state):
         time.sleep(0.5)
-    
-    print(f"Connected as Player {bot.player_id}\n")
-    
-    state = bot.get_game_state()
+        state = bot.get_game_state()
+
+    print(f"Connected as player ID {bot.player_id}")
+
     try:
         while state and not bot.is_game_over(state):
+            print(bot.is_my_turn(state))
             if bot.is_my_turn(state):
-                print("My turn!")
-                # TODO: Implement your strategy here
-                # See README.md for available endpoints
-                
-                time.sleep(0.5)
-                state = bot.get_game_state()
+                print(f"\nTurn — GameState={state.get('GameState')}")
+                new_state = bot.take_turn(state)
+                state = new_state if new_state else state
             else:
-                time.sleep(0.5)
+                time.sleep(0.3)
                 state = bot.get_game_state()
     except KeyboardInterrupt:
-        print("\nBot stopped by user")
+        print("\nBot stopped")
