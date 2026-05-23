@@ -6,6 +6,7 @@ import requests
 
 from enum import Enum, auto
 
+
 def pad_list(my_list, target_size, padding_value):
     if len(my_list) < target_size:
         my_list.extend([padding_value] * (target_size - len(my_list)))
@@ -19,6 +20,7 @@ class TileType(Enum):
     POWERUP = 4
     WALL = 5
     EMPTY = 6
+
 
 def convertToField(map_field):
 
@@ -150,6 +152,27 @@ class State(object):
         ])
         return state_vector
 
+    def inventory_count(self):
+        return len(self.inventory)
+
+    def inventory_full(self):
+        return self.inventory_count() >= 3
+
+    def add_item(self, item):
+        if self.inventory_full():
+            return False
+
+        if item == Item.POTION:
+            self.inventory.append(Field.POTION)
+        elif item == Item.CONFUSION:
+            self.inventory.append(Field.CONFUSION)
+        elif item == Item.FREEZE:
+            self.inventory.append(Field.FREEZE)
+        else:
+            raise ValueError("Invalid item type")
+
+        return True
+
 
 def get_state(url, player_id):
     response = requests.get(url, timeout=5)
@@ -220,6 +243,7 @@ def get_state(url, player_id):
 
     return State(hp, level, xp, inventory, cards, monsters_count, cooldowns, map, statuses, statuses_lasting)
 
+
 def find_my_player_id(game_state, bot_name):
     players = game_state.get('Players', {})
     for _, player in players.items():
@@ -227,8 +251,10 @@ def find_my_player_id(game_state, bot_name):
             return player.get('Id')
     return None
 
+
 MAP_W = 32
 MAP_H = 16
+
 
 def get_possible_moves(map_grid, pos, max_stamina=4):
     """
@@ -316,6 +342,98 @@ def get_summon_vectors(map_grid, pos, cards):
 
     return result
 
+
+class Item(Enum):
+    POTION = 1
+    CONFUSION = 2
+    FREEZE = 3
+
+
+def get_adjacent_pickups(state, pos):
+    if state.inventory_full():
+        return []
+
+    x, y = pos
+    pickups = []
+
+    directions = [
+        (0, -1),  # up
+        (0, 1),  # down
+        (-1, 0),  # left
+        (1, 0)  # right
+    ]
+
+    for dx, dy in directions:
+        nx, ny = x + dx, y + dy
+
+        if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+            continue
+
+        tile = state.map.get((nx, ny), Field.NORMAL)
+
+        if tile == Field.POTION:
+            pickups.append(((nx, ny), Item.POTION))
+        elif tile == Field.FREEZE:
+            pickups.append(((nx, ny), Item.FREEZE))
+        elif tile == Field.CONFUSION:
+            pickups.append(((nx, ny), Item.CONFUSION))
+
+    return pickups
+
+
+def pickup_item_at(state, player_pos, target_pos):
+    legal_pickups = get_adjacent_pickups(state, player_pos)
+
+    for pos, item in legal_pickups:
+        if pos == target_pos:
+
+            success = state.add_item(item)
+
+            if success:
+                state.map[pos] = Field.NORMAL
+                return True
+
+    return False
+
+
+def get_pickup_mask(state, player_pos):
+    if state.inventory_full():
+        return [0, 0, 0, 0]
+
+    x, y = player_pos
+
+    directions = [
+        (0, -1),  # up
+        (0, 1),  # down
+        (-1, 0),  # left
+        (1, 0)  # right
+    ]
+
+    item_tiles = {
+        Field.POTION,
+        Field.FREEZE,
+        Field.CONFUSION
+    }
+
+    mask = []
+
+    for dx, dy in directions:
+        nx, ny = x + dx, y + dy
+
+        if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+            mask.append(0)
+            continue
+
+        tile = state.map.get((nx, ny), Field.NORMAL)
+
+        if tile in item_tiles:
+            mask.append(1)
+        else:
+            mask.append(0)
+
+    return mask
+
+
 if __name__ == "__main__":
     url = "http://localhost:8080"
     game_id = "a70eec86-9fae-4f25-8ad4-84357d435578"
@@ -339,6 +457,10 @@ if __name__ == "__main__":
         raise Exception(f"Igrac '{bot_name}' nije nadjen")
 
     player = data["Players"][str(player_id)]
+    state = get_state(f"{url}/game/state/{game_id}", str(player_id))
+
+    # state.map iz get_state je trenutno lista, pickup hoce dict
+    state.map = map_grid
     my_pos = (player["Position"]["X"], player["Position"]["Y"])
     print(f"Igrac '{bot_name}' ID={player_id} na poziciji {my_pos}")
 
@@ -364,3 +486,33 @@ if __name__ == "__main__":
                 print(f"  X={sx}  Y={sy}  tile={tile.name}")
     else:
         print("\nNema dostupnih karata za postavljanje")
+
+    # Pickup logika
+
+    pickup_mask = get_pickup_mask(state, my_pos)
+    print(f"\nPickup mask [up, down, left, right]: {pickup_mask}")
+
+    pickups = get_adjacent_pickups(state, my_pos)
+
+    if pickups:
+        print("\nMoguci pickup itemi:")
+        for item_pos, item in pickups:
+            print(f"  {item_pos} -> {item.name}")
+
+        target_pos, target_item = pickups[0]
+
+        success = pickup_item_at(state, my_pos, target_pos)
+
+        if success:
+            print(f"\nPickup uspesan: {target_item.name} sa polja {target_pos}")
+        else:
+            print(f"\nPickup neuspesan: {target_item.name} sa polja {target_pos}")
+
+    else:
+        print("\nNema legalnih pickup itema.")
+
+    print("\nInventory stanje:")
+    print(state.inventory)
+
+    print(f"\nUkupno itema: {state.inventory_count()}")
+    print(f"Inventory full: {state.inventory_full()}")
