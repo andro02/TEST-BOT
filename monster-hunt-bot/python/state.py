@@ -150,12 +150,12 @@ def get_state(url, player_id):
     monster2 = 0
     monster3 = 0
     for field in data["Map"]["Grid"]:
-        if field["Entity"] is not None:
+        if field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
             if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
                 monster1 += 1
-            if field["Entity"]["Name"] == "Card of Ice Cubes"  and field["Entity"]["SummonedByPlayerId"] == player_id:
+            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
                 monster2 += 1
-            if field["Entity"]["Name"] == "Card of Ice Cubes"  and field["Entity"]["SummonedByPlayerId"] == player_id:
+            if field["Entity"]["Name"] == "Card of Ice Cubes" and field["Entity"]["SummonedByPlayerId"] == player_id:
                 monster3 += 1
     monsters_count = [monster1, monster2, monster3]
 
@@ -260,8 +260,8 @@ def get_summon_vectors(map_grid, pos, cards):
 
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "8fdc0d80-7c5c-4cd8-835f-40f4a4f8fcd5"
-    bot_name = "asd"
+    game_id = "a70eec86-9fae-4f25-8ad4-84357d435578"
+    bot_name = "dsa"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
     data = response.json() if response.status_code == 200 else None
