@@ -95,7 +95,7 @@ class Field(Enum):
     ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
+    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -111,6 +111,7 @@ class State(object):
         # self.map = np.zeros((32, 16))
         # # koji status imam i koliko traje jos
         # self.status = [0, 0]
+        self.turn_counter = turn_counter
         self.player_id = int(player_id)
         self.opp_id = int(opp_id)
         self.max_health = max_health
@@ -162,7 +163,7 @@ class State(object):
         map_vals = [f.value for f in self.map]
 
         state_vector = np.array(
-            [self.health, self.level, self.xp, self.max_health, self.attack_dmg]
+            [self.turn_counter, self.health, self.level, self.xp, self.max_health, self.attack_dmg]
             + inv
             + cards
             + cds
@@ -263,7 +264,8 @@ def parse_state(data, player_id):
     map[16 * me_x + me_y] = Field.ME
     map[16 * opp_x + opp_y] = Field.OPPONENT
 
-    return State(player_id, other_key, max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns,
+
+    return State(data["TurnCounter"], player_id, other_key, max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns,
                  map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
 
