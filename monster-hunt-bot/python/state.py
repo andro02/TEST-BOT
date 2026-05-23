@@ -18,7 +18,7 @@ class TileType(Enum):
     EMPTY = 6
 
 
-def convertToField(map_field):
+def convertToField(map_field, player_id):
 
     if map_field["Item"] is not None and map_field["Item"]["Name"] is not None:
         if map_field["Item"]["Name"] == "Kristal života":
@@ -36,28 +36,35 @@ def convertToField(map_field):
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
             return Field.MONSTER_CARD_3
 
-    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field[
-        "Entity"]:
+    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
         if map_field["Entity"]["Name"] == "Ice cube":
-            return Field.MONSTER_1
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_1
+            else:
+                return Field.ENEMY_MONSTER_1
         elif map_field["Entity"]["Name"] == "Ice cube":
-            return Field.MONSTER_2
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_2
+            else:
+                return Field.ENEMY_MONSTER_2
         elif map_field["Entity"]["Name"] == "Ice cube":
-            return Field.MONSTER_3
+            if map_field["Entity"]["SummonedByPlayerId"] == player_id:
+                return Field.MY_MONSTER_3
+            else:
+                return Field.ENEMY_MONSTER_3
 
-    if map_field["FieldType"]  == TileType.NORMAL.value:
+    if map_field["FieldType"] == TileType.NORMAL.value:
         return Field.NORMAL
-    elif map_field["FieldType"]  == TileType.OBSTACLE_SLOW.value:
+    elif map_field["FieldType"] == TileType.OBSTACLE_SLOW.value:
         return Field.SNOW
-    elif map_field["FieldType"]  == TileType.OBSTACLE.value:
+    elif map_field["FieldType"] == TileType.OBSTACLE.value:
         return Field.SPIKES
-    elif map_field["FieldType"]  == TileType.WALL.value:
+    elif map_field["FieldType"] == TileType.WALL.value:
         return Field.WALL
     elif map_field["FieldType"] == TileType.EMPTY.value:
         return Field.EMPTY
 
-
-    if map_field["FieldType"] == TileType.BASE or map_field["FieldType"]  == TileType.NORMAL:
+    if map_field["FieldType"] == TileType.BASE or map_field["FieldType"] == TileType.NORMAL:
         return Field.NORMAL
     return None
 
@@ -188,13 +195,13 @@ def get_state(url, player_id):
     cooldowns = []
     for card in data["Players"][player_id]["Cards"]:
         if card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_1)
+            cards.append(Field.MY_MONSTER_1)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_2)
+            cards.append(Field.MY_MONSTER_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Cubes":
-            cards.append(Field.MONSTER_3)
+            cards.append(Field.MY_MONSTER_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
 
@@ -231,7 +238,7 @@ def get_possible_moves(map_grid, pos, max_stamina=4):
     Vraca dict {(x, y): stamina_potrosena}.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION, 
-               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3 }
 
     current_tile = map_grid.get(pos, Field.NORMAL)
@@ -269,7 +276,7 @@ def get_move_vector(map_grid, pos, max_stamina=4):
     Ako je korak N blokiran, koraci N+1..max_stamina su takodje 0.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.FREEZE, Field.CONFUSION, Field.POTION,
-               Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
     current_tile = map_grid.get(pos, Field.NORMAL)
@@ -326,7 +333,7 @@ def get_summon_vectors(map_grid, pos, cards):
     Vraca listu [(card, np.array(4,)), ...] — jedan unos po dostupnoj karti.
     """
     BLOCKED = {Field.WALL, Field.EMPTY, Field.SPIKES, Field.FREEZE, Field.CONFUSION,
-               Field.POTION, Field.MONSTER_1, Field.MONSTER_2, Field.MONSTER_3,
+               Field.POTION, Field.MY_MONSTER_1, Field.MY_MONSTER_2, Field.MY_MONSTER_3,
                Field.MONSTER_CARD_1, Field.MONSTER_CARD_2, Field.MONSTER_CARD_3}
 
     x, y = pos
@@ -424,15 +431,16 @@ if __name__ == "__main__":
     if data is None:
         raise Exception("Problem parsing state")
 
+    player_id = find_my_player_id(data, bot_name)
+
     # Napravi map_grid dict
     map_grid = {}
     for field in data["Map"]["Grid"]:
         pos = field["Position"]
         x, y = pos["X"], pos["Y"]
-        tile = convertToField(field)
+        tile = convertToField(field, player_id)
         map_grid[(x, y)] = tile if tile is not None else Field.NORMAL
 
-    player_id = find_my_player_id(data, bot_name)
     if player_id is None:
         raise Exception(f"Igrac '{bot_name}' nije nadjen")
 
