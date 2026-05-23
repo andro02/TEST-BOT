@@ -33,7 +33,7 @@ def convertToField(map_field, player_id):
             return Field.MONSTER_CARD_1
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Mage":
             return Field.MONSTER_CARD_2
-        elif "card" in map_field["MonsterCard"]["Name"]:
+        elif "card" in map_field["MonsterCard"]["Name"].lower():
             return Field.MONSTER_CARD_3
 
     if map_field["Entity"] is not None and "Name" in map_field["Entity"]:
@@ -96,7 +96,7 @@ class Field(Enum):
     ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self,max_health, attack_dmg, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
+    def __init__(self, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -112,6 +112,8 @@ class State(object):
         # self.map = np.zeros((32, 16))
         # # koji status imam i koliko traje jos
         # self.status = [0, 0]
+        self.player_id = int(player_id)
+        self.opp_id = int(opp_id)
         self.max_health = max_health
         self.attack_dmg = attack_dmg
         self.health = health
@@ -255,7 +257,7 @@ def get_state(url, player_id):
         elif card["Name"] == "Card of Ice Mage":
             cards.append(Field.MONSTER_CARD_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
-        elif "card" in lower(card["Name"]):
+        elif "card" in card["Name"].lower():
             cards.append(Field.MONSTER_CARD_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
@@ -266,7 +268,7 @@ def get_state(url, player_id):
     map[16 * me_x + me_y] = Field.ME
     map[16 * opp_x + opp_y] = Field.OPPONENT
 
-    return State(max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
+    return State(player_id, other_key, max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns, map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
 
 def find_my_player_id(game_state, bot_name):
@@ -481,6 +483,27 @@ def flatten_possible_pickups(masks):
 
     return np.array(result, dtype=np.int8)
 
+def get_inventory_vector(inventory):
+    """
+    Vraca vektor [POTION, FREEZE, CONFUSION]
+
+    1 = imam bar jedan
+    0 = nemam
+    """
+
+    vector = np.zeros(3, dtype=np.int8)
+
+    if Field.POTION in inventory:
+        vector[0] = 1
+
+    if Field.FREEZE in inventory:
+        vector[1] = 1
+
+    if Field.CONFUSION in inventory:
+        vector[2] = 1
+
+    return vector
+
 
 _FIELD_CHAR = {
     Field.NORMAL:          " .",
@@ -578,6 +601,10 @@ if __name__ == "__main__":
     mask_vector = flatten_possible_pickups(action_masks)
     print(mask_vector)
     print(mask_vector.shape)  # (24,)
+
+    inventory_vector = get_inventory_vector(state.inventory)
+    print("\nInventory vector:")
+    print(inventory_vector)
 
     print(state.can_attack_player())
     print(state.monster_attack_vector())
