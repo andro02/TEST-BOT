@@ -170,15 +170,19 @@ def reward_fn(prev_state, next_state, done=False):
     # reward approaching enemy slightly
     reward += (prev_dist - next_dist) * 0.05
 
-    reward += (
-        len(next_state.inventory) -
-        len(prev_state.inventory)
-    ) * 1.5
+    if next_state.inventory[0] != 0:
+        reward += 2
+    if next_state.inventory[1] != 0:
+        reward += 2
+    if next_state.inventory[2] != 0:
+        reward += 2
 
-    reward += (
-        len(next_state.cards) -
-        len(prev_state.cards)
-    ) * 2.0
+    if next_state.cards[0] != 0:
+        reward += 3
+    if next_state.cards[1] != 0:
+        reward += 3
+    if next_state.cards[2] != 0:
+        reward += 3
 
     prev_frozen = "Frozen" in prev_state.statuses
     next_frozen = "Frozen" in next_state.statuses
