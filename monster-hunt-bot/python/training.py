@@ -86,69 +86,127 @@ def reward_fn(prev_state, next_state, done=False):
     return reward
 
 
-def main():
-    game_id = start_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+def new_game(base_url, p1_name, p2_name):
+    """Pokrece novu igru i vraca (game_id, p1_id, p2_id, state_url)."""
+    game_id = start_game(base_url, p1_name, p2_name)
+    connect_websocket(base_url, game_id)
+    time.sleep(0.5)
 
-    connect_websocket(BASE_URL, game_id)
-    time.sleep(0.5)  # cekaj da server predje u Player1Turn
-
-    state_url = f"{BASE_URL}/game/state/{game_id}"
-
-    # player_id dolazi iz game state, ne iz start responsa
+    state_url = f"{base_url}/game/state/{game_id}"
     raw = requests.get(state_url, timeout=5).json()
-    player_id = str(find_my_player_id(raw, BOT1_NAME))
-    print(f"Player ID: {player_id}")
 
-    state = get_state(state_url, player_id)
-    obs_dim = len(state.get_state_vector())
+    p1_id = str(find_my_player_id(raw, p1_name))
+    p2_id = str(find_my_player_id(raw, p2_name))
+    print(f"P1 ID={p1_id}  P2 ID={p2_id}")
+    return game_id, p1_id, p2_id, state_url
+
+
+def print_turn(gs, player_name, command, state, reward):
+    sep = "=" * 72
+    print(sep)
+    print(f"  {gs}  |  Igrac: {player_name}  |  Reward: {reward:+.2f}")
+    action = command.get("Action", "?")
+    if action == "Move":
+        t = command.get("Target", {})
+        print(f"  Potez: Move -> X={t.get('X')} Y={t.get('Y')}")
+    elif action == "Attack":
+        print(f"  Potez: Attack target={command.get('TargetId')}")
+    elif action == "UseItem":
+        print(f"  Potez: UseItem id={command.get('ItemId')}")
+    elif action == "Pickup":
+        t = command.get("Target", {})
+        print(f"  Potez: Pickup X={t.get('X')} Y={t.get('Y')}")
+    elif action == "Summon":
+        t = command.get("Target", {})
+        print(f"  Potez: Summon card={command.get('CardId')} -> X={t.get('X')} Y={t.get('Y')}")
+    else:
+        print(f"  Potez: {action}")
+    print(f"  HP={state.health}/{state.max_health}  pos={state.me_xy}  opp={state.opp_xy}")
+    print_map(state.map)
+
+
+def main():
+    game_id, p1_id, p2_id, state_url = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+
+    # Odredi obs_dim iz prvog state-a
+    init_state = get_state(state_url, p1_id)
+    obs_dim = len(init_state.get_state_vector())
+    print(f"obs_dim={obs_dim}")
 
     agent = PPO(obs_dim=obs_dim, action_dim=60)
+    last_state = init_state
 
     for update in range(TOTAL_UPDATES):
         memory = make_memory()
+        steps_collected = 0
 
-        for step in range(ROLLOUT_STEPS):
-            state = get_state(state_url, player_id)
+        while steps_collected < ROLLOUT_STEPS:
+            raw = requests.get(state_url, timeout=5).json()
+            gs = raw.get("GameState", "")
 
+            if gs == "Ending":
+                # Igra gotova — nagradi poslednji korak i pokreni novu igru
+                memory["dones"][-1] = 1 if memory["dones"] else 0
+                game_id, p1_id, p2_id, state_url = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+                raw = requests.get(state_url, timeout=5).json()
+                gs = raw.get("GameState", "")
+
+            if gs == "Player1Turn":
+                current_id = p1_id
+                player_name = BOT1_NAME
+            elif gs == "Player2Turn":
+                current_id = p2_id
+                player_name = BOT2_NAME
+            else:
+                # MonsterTurn — cekaj
+                time.sleep(0.1)
+                continue
+
+            state = get_state(state_url, current_id)
             obs = state.get_state_vector()
             mask = build_action_mask(state)
 
             action_idx, logprob, value = agent.model.act(obs, mask)
-
             command = action_index_to_command(action_idx, state)
-
             prev_state = state
 
             try:
                 send_api_command(BASE_URL, game_id, command)
             except Exception as e:
-                print("Bad action:", command, e)
+                print(f"Bad action [{gs}]:", command, e)
 
             time.sleep(0.05)
 
-            next_state = get_state(state_url, player_id)
-
-            done = False
+            next_raw = requests.get(state_url, timeout=5).json()
+            done = next_raw.get("GameState", "") == "Ending"
+            next_state = get_state(state_url, current_id)
             reward = reward_fn(prev_state, next_state, done)
+
+            print_turn(gs, player_name, command, next_state, reward)
 
             memory["obs"].append(obs)
             memory["actions"].append(action_idx)
             memory["logprobs"].append(logprob)
             memory["values"].append(value)
             memory["rewards"].append(reward)
-            memory["dones"].append(done)
+            memory["dones"].append(int(done))
             memory["masks"].append(mask)
 
-        next_obs = next_state.get_state_vector()
-        next_mask = build_action_mask(next_state)
+            last_state = next_state
+            steps_collected += 1
 
-        _, _, next_value = agent.model.act(next_obs, next_mask)
+        # Bootstrap vrednost za poslednji state
+        last_obs = last_state.get_state_vector()
+        last_mask = build_action_mask(last_state)
+        _, _, next_value = agent.model.act(last_obs, last_mask)
 
         agent.update(memory, next_value)
+        print(f"Update {update}  steps={steps_collected}  "
+              f"reward_sum={sum(memory['rewards']):.2f}")
 
         if update % 10 == 0:
             agent.save("ppo_model.pt")
-            print(f"Saved update {update}")
+            print(f"  -> Saved ppo_model.pt")
 
     agent.save("ppo_model_final.pt")
 
