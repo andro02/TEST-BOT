@@ -33,7 +33,7 @@ def convertToField(map_field, player_id):
             return Field.MONSTER_CARD_1
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Mage":
             return Field.MONSTER_CARD_2
-        elif map_field["MonsterCard"]["Name"] == "Card of Ice Warrior":
+        elif "card" in map_field["MonsterCard"]["Name"]:
             return Field.MONSTER_CARD_3
 
     if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
@@ -135,7 +135,9 @@ class State(object):
             np.array([
                 self.health,
                 self.level,
-                self.xp
+                self.xp,
+                self.max_health,
+                self.attack_dmg
             ]),
 
             # inventory
@@ -163,6 +165,34 @@ class State(object):
 
         ])
         return state_vector
+
+    def can_attack_player(self):
+        return abs(self.me_xy[0] - self.opp_xy[0]) + abs(self.me_xy[1] - self.opp_xy[1]) == 1
+
+    def monster_attack_vector(self):
+        x, y = self.me_xy
+
+        directions = [
+            (-1, 0),  # LEFT
+            (1, 0),  # RIGHT
+            (0, -1),  # UP
+            (0, 1)  # DOWN
+        ]
+
+        vector = np.zeros(4, dtype=np.int8)
+
+        for i, (dx, dy) in enumerate(directions):
+            nx, ny = x + dx, y + dy
+
+            if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
+                continue
+
+            tile = self.map[nx * MAP_H + ny]
+
+            if tile in [Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3]:
+                vector[i] = 1
+
+        return vector
 
 
 def get_state(url, player_id):
@@ -203,7 +233,7 @@ def get_state(url, player_id):
         elif card["Name"] == "Card of Ice Mage":
             cards.append(Field.MONSTER_CARD_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
-        elif card["Name"] == "Card of Ice Warrior":
+        elif "card" in lower(card["Name"]):
             cards.append(Field.MONSTER_CARD_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
