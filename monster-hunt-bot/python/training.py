@@ -171,7 +171,7 @@ def reward_fn(prev_state, next_state, done=False):
     reward += (prev_dist - next_dist) * 0.05
 
     reward += (
-        next_state.inventory - prev_state.inventory
+        len(next_state.inventory) - len(prev_state.inventory)
     ) * 1.5
 
     reward += (
