@@ -109,22 +109,157 @@ ROLLOUT_STEPS = 512
 TOTAL_UPDATES = 1000
 
 
+def is_collapse_tile(x, y, phase):
+    # PHASE 1: outer 3 columns
+    if phase >= 1:
+        if x <= 2 or x >= MAP_W - 3:
+            return True
+
+    # PHASE 2: 3 more columns from each side
+    if phase >= 2:
+        if x <= 5 or x >= MAP_W - 6:
+            return True
+
+    # PHASE 3: bridges
+    if phase >= 3:
+        # left-side bridges
+        if 6 <= x <= 12 and (0 <= y <= 3 or 12 <= y <= 15):
+            return True
+
+        # mirrored right-side bridges
+        mx = MAP_W - 1 - x
+        if 6 <= mx <= 12 and (0 <= y <= 3 or 12 <= y <= 15):
+            return True
+
+    return False
+
+
 def reward_fn(prev_state, next_state, done=False):
     reward = 0.0
 
-    reward += (next_state.xp - prev_state.xp) * 1.0
-    reward += (next_state.level - prev_state.level) * 5.0
-    reward += (next_state.health - prev_state.health) * 0.05
+    # =========================================================
+    # SURVIVAL
+    # =========================================================
 
-    opp_dist_prev = abs(prev_state.me_xy[0] - prev_state.opp_xy[0]) + abs(prev_state.me_xy[1] - prev_state.opp_xy[1])
-    opp_dist_next = abs(next_state.me_xy[0] - next_state.opp_xy[0]) + abs(next_state.me_xy[1] - next_state.opp_xy[1])
+    hp_diff = next_state.health - prev_state.health
+    reward += hp_diff * 0.15
 
-    reward += (opp_dist_prev - opp_dist_next) * 0.1
+    # dying is VERY bad
+    if next_state.health <= 0:
+        reward -= 20.0
+
+    # =========================================================
+    # DAMAGE / PRESSURE
+    # =========================================================
+
+    # opponent hp drop
+    # estimated from xp gain
+    xp_diff = next_state.xp - prev_state.xp
+    reward += xp_diff * 0.2
+
+    # =========================================================
+    # LEVEL UPS
+    # =========================================================
+
+    level_diff = next_state.level - prev_state.level
+    reward += level_diff * 15.0
+
+    # =========================================================
+    # POSITIONING
+    # =========================================================
+
+    prev_dist = (
+        abs(prev_state.me_xy[0] - prev_state.opp_xy[0]) +
+        abs(prev_state.me_xy[1] - prev_state.opp_xy[1])
+    )
+
+    next_dist = (
+        abs(next_state.me_xy[0] - next_state.opp_xy[0]) +
+        abs(next_state.me_xy[1] - next_state.opp_xy[1])
+    )
+
+    # reward approaching enemy slightly
+    reward += (prev_dist - next_dist) * 0.05
+
+    # =========================================================
+    # ITEMS
+    # =========================================================
+
+    reward += (
+        len(next_state.inventory) -
+        len(prev_state.inventory)
+    ) * 1.5
+
+    # =========================================================
+    # CARDS
+    # =========================================================
+
+    reward += (
+        len(next_state.cards) -
+        len(prev_state.cards)
+    ) * 2.0
+
+    # =========================================================
+    # STATUS EFFECTS
+    # =========================================================
+
+    prev_frozen = "Frozen" in prev_state.statuses
+    next_frozen = "Frozen" in next_state.statuses
+
+    prev_confused = "Confused" in prev_state.statuses
+    next_confused = "Confused" in next_state.statuses
+
+    if not prev_frozen and next_frozen:
+        reward -= 4.0
+
+    if not prev_confused and next_confused:
+        reward -= 3.0
+
+    # =========================================================
+    # MAP DANGER
+    # =========================================================
+
+    x, y = next_state.me_xy
+    opp_x, opp_y = next_state.opp_xy
+
+    tile = next_state.map[x * MAP_H + y]
+
+    if tile == Field.SPIKES:
+        reward -= 1.0
+
+    if tile == Field.SNOW:
+        reward -= 0.15
+
+    phase = next_state.turn // 15
+    next_phase = phase + 1
+    turns_until_collapse = 15 - (next_state.turn % 15)
+
+    if is_collapse_tile(x, y, phase):
+        reward -= 15.0
+
+    elif turns_until_collapse <= 3 and is_collapse_tile(x, y, next_phase):
+        reward -= 3.0
+
+    if turns_until_collapse <= 3 and is_collapse_tile(opp_x, opp_y, next_phase):
+        reward += 4.0
+
+    # =========================================================
+    # TERMINAL
+    # =========================================================
 
     if done:
-        reward += 10.0
+        if next_state.health > 0:
+            reward += 50.0
+        else:
+            reward -= 50.0
 
-    return reward
+    # =========================================================
+    # CLAMP
+    # =========================================================
+
+    reward = np.clip(reward, -50.0, 50.0)
+
+    return float(reward)
 
 
 def new_game(base_url, p1_name, p2_name):
