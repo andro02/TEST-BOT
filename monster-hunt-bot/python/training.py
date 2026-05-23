@@ -225,7 +225,9 @@ def main():
             next_state = parse_state(current_raw, current_id)
             reward = reward_fn(prev_state, next_state, done)
 
-            # print_turn(gs, player_name, command, next_state, reward)
+            action = command.get("Action", "?")
+            target = command.get("Target", command.get("TargetId", ""))
+            print(f"[{gs}] {player_name}: {action} {target}  HP={next_state.health}/{next_state.max_health}  reward={reward:+.2f}")
 
             memory["obs"].append(obs)
             memory["actions"].append(action_idx)
@@ -235,6 +237,7 @@ def main():
             memory["dones"].append(int(done))
             memory["masks"].append(mask)
 
+            print("Game ending:", done)
             if done:
                 game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(
                     BASE_URL, BOT1_NAME, BOT2_NAME

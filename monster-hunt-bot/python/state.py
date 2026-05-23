@@ -95,7 +95,7 @@ class Field(Enum):
     ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, cards, monster_cooldowns, map, statuses, statuses_lasting, me_xy, opp_xy):
+    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, item_ids, cards, card_ids, monster_cooldowns, map, enemy_monster_ids_by_pos, statuses, statuses_lasting, me_xy, opp_xy):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -121,12 +121,12 @@ class State(object):
         self.xp = xp
         # 1 potion, 2 confusion, 3 freeze
         self.inventory = inventory
-        # 1 je monster 1, 2 monster 2, 3 monster 3
+        self.item_ids = item_ids          # {Field: item_id} za UseItem API
         self.cards = cards
-        # koliko poteza dok ne mogu opet koristim sledeceg monstera
+        self.card_ids = card_ids          # [int] paralelno sa cards, za Summon API
         self.monster_cooldowns = monster_cooldowns
-        # kolekcija enuma Field
         self.map = map
+        self.enemy_monster_ids_by_pos = enemy_monster_ids_by_pos  # {(x,y): id} za Attack API
         # koji status imam i koliko traje jos
         self.statuses = statuses
         self.statuses_lasting = statuses_lasting
@@ -216,6 +216,7 @@ def parse_state(data, player_id):
                 collect_ids(item)
     collect_ids(data)
 
+    enemy_monster_ids_by_pos = {}
     map = []
     for field in data["Map"]["Grid"]:
         entity = field.get("Entity")
@@ -225,7 +226,13 @@ def parse_state(data, player_id):
                 field = dict(field)
                 field["Entity"] = resolved
         tile = convertToField(field, player_id)
-        map.append(tile if tile is not None else Field.NORMAL)
+        tile = tile if tile is not None else Field.NORMAL
+        map.append(tile)
+        if tile in (Field.ENEMY_MONSTER_1, Field.ENEMY_MONSTER_2, Field.ENEMY_MONSTER_3):
+            ent = field.get("Entity")
+            if isinstance(ent, dict) and "Id" in ent:
+                pos = field.get("Position", {})
+                enemy_monster_ids_by_pos[(pos["X"], pos["Y"])] = ent["Id"]
 
     hp = data["Players"][player_id]["Health"]
     max_hp = data["Players"][player_id]["MaxHealth"]
@@ -236,25 +243,33 @@ def parse_state(data, player_id):
     statuses = list(data["Players"][player_id]["ActiveStatuses"].keys())
     statuses_lasting = list(data["Players"][player_id]["ActiveStatuses"].values())
 
+    item_ids = {}
     inventory = []
     for item in data["Players"][player_id]["Inventory"]:
         if item["Name"] == "Kristal života":
             inventory.append(Field.POTION)
+            item_ids[Field.POTION] = item["Id"]
         elif item["Name"] == "Freeze scroll":
             inventory.append(Field.FREEZE)
+            item_ids[Field.FREEZE] = item["Id"]
         elif item["Name"] == "Dizzy scroll":
             inventory.append(Field.CONFUSION)
+            item_ids[Field.CONFUSION] = item["Id"]
 
+    card_ids = []
     cards = []
     cooldowns = []
     for card in data["Players"][player_id]["Cards"]:
         if card["Name"] == "Card of Ice Cubes":
+            card_ids.append(card["Id"])
             cards.append(Field.MONSTER_CARD_1)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif card["Name"] == "Card of Ice Mage":
+            card_ids.append(card["Id"])
             cards.append(Field.MONSTER_CARD_2)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
         elif "card" in card["Name"].lower():
+            card_ids.append(card["Id"])
             cards.append(Field.MONSTER_CARD_3)
             cooldowns.append(card["Cooldown"] - card["CooldownCounter"])
 
@@ -265,8 +280,9 @@ def parse_state(data, player_id):
     map[16 * opp_x + opp_y] = Field.OPPONENT
 
 
-    return State(data["TurnCounter"], player_id, other_key, max_hp, attack_dmg, hp, level, xp, inventory, cards, cooldowns,
-                 map, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
+    return State(data["TurnCounter"], player_id, other_key, max_hp, attack_dmg, hp, level, xp,
+                 inventory, item_ids, cards, card_ids, cooldowns,
+                 map, enemy_monster_ids_by_pos, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y))
 
 
 def get_state(url, player_id):
