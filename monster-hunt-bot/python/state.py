@@ -40,7 +40,7 @@ def convertToField(map_field):
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
             return Field.MONSTER_CARD_3
 
-    if map_field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
+    if map_field["Entity"] is not None and "Name" in map_field["Entity"] and "SummonedByPlayerId" in map_field["Entity"]:
         if map_field["Entity"]["Name"] == "Ice cube":
             return Field.MONSTER_1
         elif map_field["Entity"]["Name"] == "Ice cube":
@@ -230,16 +230,10 @@ def get_state(url, player_id):
 
 
     other_key = next(k for k in data["Players"] if k != player_id)
-    me_x, me_y = data["Players"][player_id]["X"], data["Players"][player_id]["Y"]
-    opp_x, opp_y = data["Players"][other_key]["X"], data["Players"][other_key]["Y"]
-    map[32 * me_x + me_y] = Field.ME
-    map[32 * opp_x + opp_y] = Field.OPPONENT
-
-
-
-    print(map)
-
-    # TODO handle width height
+    me_x, me_y = data["Players"][player_id]["Position"]["X"], data["Players"][player_id]["Position"]["Y"]
+    opp_x, opp_y = data["Players"][other_key]["Position"]["X"], data["Players"][other_key]["Position"]["Y"]
+    map[16 * me_x + me_y] = Field.ME
+    map[16 * opp_x + opp_y] = Field.OPPONENT
 
     return State(hp, level, xp, inventory, cards, monsters_count, cooldowns, map, statuses, statuses_lasting)
 
