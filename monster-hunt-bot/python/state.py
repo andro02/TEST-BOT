@@ -38,7 +38,7 @@ def convertToField(map_field):
         elif map_field["MonsterCard"]["Name"] == "Card of Ice Cubes":
             return Field.MONSTER_CARD_3
 
-    if map_field["Entity"] is not None:
+    if map_field["Entity"] is not None and "Name" in field["Entity"] and "SummonedByPlayerId" in field["Entity"]:
         if map_field["Entity"]["Name"] == "Ice cube":
             return Field.MONSTER_1
         elif map_field["Entity"]["Name"] == "Ice cube":
