@@ -402,7 +402,7 @@ def get_possible_pickups(state, player_pos):
         if not (0 <= nx < MAP_W and 0 <= ny < MAP_H):
             continue
 
-        tile = state.map.get((nx, ny), Field.NORMAL)
+        tile = state.map[nx * MAP_H + ny]
 
         if tile in masks:
             masks[tile][i] = 1
@@ -428,11 +428,10 @@ def flatten_possible_pickups(masks):
 
 if __name__ == "__main__":
     url = "http://localhost:8080"
-    game_id = "b2b3944b-82d8-4388-9c40-5648d056873a"
-    bot_name = "asd"
+    game_id = "a70eec86-9fae-4f25-8ad4-84357d435578"
+    bot_name = "dsa"
 
     response = requests.get(f"{url}/game/state/{game_id}", timeout=5)
-
     data = response.json() if response.status_code == 200 else None
     if data is None:
         raise Exception("Problem parsing state")
