@@ -105,7 +105,7 @@ def connect_websocket(base_url, game_id):
     thread.start()
     return thread, turn_event
 
-ROLLOUT_STEPS = 512
+ROLLOUT_STEPS = 256
 TOTAL_UPDATES = 1000
 
 
@@ -277,6 +277,7 @@ def main():
     agent = PPO(obs_dim=obs_dim, action_dim=60)
     last_state = init_state
     current_raw = raw  # nose stanje izmedju tura — eliminise redundantni GET #1
+    consecutive_failures = 0
 
     for update in range(TOTAL_UPDATES):
         memory = make_memory()
@@ -310,10 +311,26 @@ def main():
             command = action_index_to_command(action_idx, state)
             prev_state = state
 
+            command_ok = True
             try:
                 send_api_command(BASE_URL, game_id, command)
+                consecutive_failures = 0
             except Exception as e:
                 print(f"Bad action [{gs}]:", command, e)
+                command_ok = False
+                consecutive_failures += 1
+
+            if consecutive_failures >= 3:
+                print(f"[STUCK] {consecutive_failures} uzastopnih gresaka, restartujem igru")
+                game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+                last_state = parse_state(current_raw, p1_id)
+                consecutive_failures = 0
+                continue
+
+            if not command_ok:
+                # Komanda nije prosla — ne cekaj WS, samo osvezi stanje i preskoči ovaj korak
+                current_raw = requests.get(state_url, timeout=5).json()
+                continue
 
             # Cekaj WS potvrdu da je turn promenjen, zatim GET (jedini GET po potezu)
             turn_event.wait(timeout=6)
@@ -356,9 +373,8 @@ def main():
         print(f"Update {update}  steps={steps_collected}  "
               f"reward_sum={sum(memory['rewards']):.2f}")
 
-        if update % 10 == 0:
-            agent.save("ppo_model.pt")
-            print(f"  -> Saved ppo_model.pt")
+        agent.save("ppo_model.pt")
+        print(f"  -> Saved ppo_model.pt")
 
     agent.save("ppo_model_final.pt")
 
