@@ -168,15 +168,15 @@ def reward_fn(prev_state, next_state, done=False):
     )
 
     # reward approaching enemy slightly
-    reward += (prev_dist - next_dist) * 0.05
+    reward += (prev_dist - next_dist) * 0.4
 
     reward += (
-        len(next_state.inventory) - len(prev_state.inventory)
+        abs(len(next_state.inventory) - len(prev_state.inventory))
     ) * 1.5
 
     reward += (
-        len(next_state.cards) -
-        len(prev_state.cards)
+        abs(len(next_state.cards) -
+        len(prev_state.cards))
     ) * 2.0
 
     prev_frozen = "Frozen" in prev_state.statuses
