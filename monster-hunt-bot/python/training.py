@@ -275,7 +275,8 @@ def main():
     print(f"obs_dim={obs_dim}")
 
     agent = PPO(obs_dim=obs_dim, action_dim=60)
-    last_state = init_state
+    last_state_p1 = init_state
+    last_state_p2 = parse_state(raw, p2_id)
     current_raw = raw  # nose stanje izmedju tura — eliminise redundantni GET #1
     consecutive_failures = 0
 
@@ -323,7 +324,8 @@ def main():
             if consecutive_failures >= 3:
                 print(f"[STUCK] {consecutive_failures} uzastopnih gresaka, restartujem igru")
                 game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
-                last_state = parse_state(current_raw, p1_id)
+                last_state_p1 = parse_state(current_raw, p1_id)
+                last_state_p2 = parse_state(current_raw, p2_id)
                 consecutive_failures = 0
                 continue
 
@@ -345,33 +347,38 @@ def main():
             target = command.get("Target", command.get("TargetId", ""))
             print(f"[{gs}] {player_name}: {action} {target}  HP={next_state.health}/{next_state.max_health}  reward={reward:+.2f}")
 
-            memory["obs"].append(obs)
-            memory["actions"].append(action_idx)
-            memory["logprobs"].append(logprob)
-            memory["values"].append(value)
-            memory["rewards"].append(reward)
-            memory["dones"].append(int(done))
-            memory["masks"].append(mask)
+            suffix = "p1" if gs == "Player1Turn" else "p2"
+            memory[f"obs_{suffix}"].append(obs)
+            memory[f"actions_{suffix}"].append(action_idx)
+            memory[f"logprobs_{suffix}"].append(logprob)
+            memory[f"values_{suffix}"].append(value)
+            memory[f"rewards_{suffix}"].append(reward)
+            memory[f"dones_{suffix}"].append(int(done))
+            memory[f"masks_{suffix}"].append(mask)
+
+            if gs == "Player1Turn":
+                last_state_p1 = next_state
+            else:
+                last_state_p2 = next_state
 
             print("Game ending:", done)
             if done:
                 game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(
                     BASE_URL, BOT1_NAME, BOT2_NAME
                 )
-                last_state = parse_state(current_raw, p1_id)
-            else:
-                last_state = next_state
+                last_state_p1 = parse_state(current_raw, p1_id)
+                last_state_p2 = parse_state(current_raw, p2_id)
 
             steps_collected += 1
 
-        # Bootstrap vrednost za poslednji state
-        last_obs = last_state.get_state_vector()
-        last_mask = build_action_mask(last_state)
-        _, _, next_value = agent.model.act(last_obs, last_mask)
+        # Bootstrap zasebno za P1 i P2
+        _, _, nv_p1 = agent.model.act(last_state_p1.get_state_vector(), build_action_mask(last_state_p1))
+        _, _, nv_p2 = agent.model.act(last_state_p2.get_state_vector(), build_action_mask(last_state_p2))
 
-        agent.update(memory, next_value)
+        agent.update(memory, nv_p1, nv_p2)
+        total_rewards = sum(memory["rewards_p1"]) + sum(memory["rewards_p2"])
         print(f"Update {update}  steps={steps_collected}  "
-              f"reward_sum={sum(memory['rewards']):.2f}")
+              f"reward_sum={total_rewards:.2f}")
 
         agent.save("ppo_model.pt")
         print(f"  -> Saved ppo_model.pt")

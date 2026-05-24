@@ -109,18 +109,31 @@ class PPO:
 
         return advantages, returns
 
-    def update(self, memory, next_value):
-        advantages, returns = self.compute_gae(
-            memory["rewards"],
-            memory["values"],
-            memory["dones"],
-            next_value
+    def update(self, memory, next_value_p1, next_value_p2):
+        adv_p1, ret_p1 = self.compute_gae(
+            memory["rewards_p1"], memory["values_p1"], memory["dones_p1"], next_value_p1
         )
+        adv_p2, ret_p2 = self.compute_gae(
+            memory["rewards_p2"], memory["values_p2"], memory["dones_p2"], next_value_p2
+        )
+        advantages = adv_p1 + adv_p2
+        returns = ret_p1 + ret_p2
 
-        obs = torch.tensor(np.array(memory["obs"]), dtype=torch.float32, device=DEVICE)
-        actions = torch.tensor(memory["actions"], dtype=torch.long, device=DEVICE)
-        old_logprobs = torch.tensor(memory["logprobs"], dtype=torch.float32, device=DEVICE)
-        masks = torch.tensor(np.array(memory["masks"]), dtype=torch.bool, device=DEVICE)
+        obs_all     = memory["obs_p1"]     + memory["obs_p2"]
+        actions_all = memory["actions_p1"] + memory["actions_p2"]
+        logprobs_all= memory["logprobs_p1"]+ memory["logprobs_p2"]
+        masks_all   = memory["masks_p1"]   + memory["masks_p2"]
+
+        # pomešaj redosled da minibatch ne bude samo jedan igrač
+        import random
+        combined = list(zip(obs_all, actions_all, logprobs_all, masks_all, advantages, returns))
+        random.shuffle(combined)
+        obs_all, actions_all, logprobs_all, masks_all, advantages, returns = map(list, zip(*combined))
+
+        obs = torch.tensor(np.array(obs_all), dtype=torch.float32, device=DEVICE)
+        actions = torch.tensor(actions_all, dtype=torch.long, device=DEVICE)
+        old_logprobs = torch.tensor(logprobs_all, dtype=torch.float32, device=DEVICE)
+        masks = torch.tensor(np.array(masks_all), dtype=torch.bool, device=DEVICE)
         advantages = torch.tensor(advantages, dtype=torch.float32, device=DEVICE)
         returns = torch.tensor(returns, dtype=torch.float32, device=DEVICE)
 
@@ -173,11 +186,8 @@ class PPO:
 
 def make_memory():
     return {
-        "obs": [],
-        "actions": [],
-        "logprobs": [],
-        "rewards": [],
-        "values": [],
-        "dones": [],
-        "masks": []
+        "obs_p1": [], "actions_p1": [], "logprobs_p1": [],
+        "rewards_p1": [], "values_p1": [], "dones_p1": [], "masks_p1": [],
+        "obs_p2": [], "actions_p2": [], "logprobs_p2": [],
+        "rewards_p2": [], "values_p2": [], "dones_p2": [], "masks_p2": [],
     }
