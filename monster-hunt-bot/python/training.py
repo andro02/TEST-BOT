@@ -1,5 +1,6 @@
 # train.py
 
+import queue
 import requests
 import threading
 import socket
@@ -107,6 +108,7 @@ def connect_websocket(base_url, game_id):
 
 ROLLOUT_STEPS = 256
 TOTAL_UPDATES = 1000
+NUM_ENVS = 12
 
 
 def is_collapse_tile(x, y, phase):
@@ -168,11 +170,10 @@ def reward_fn(prev_state, next_state, done=False):
     )
 
     # reward approaching enemy slightly
-    reward += (prev_dist - next_dist) * 0.4
+    reward += (prev_dist - next_dist) * 0.1
 
-    reward += (
-        abs(len(next_state.inventory) - len(prev_state.inventory))
-    ) * 1.5
+    # only reward picking up items, not using them blindly
+    reward += max(0, len(next_state.inventory) - len(prev_state.inventory)) * 1.5
 
     reward += (
         abs(len(next_state.cards) -
@@ -185,11 +186,23 @@ def reward_fn(prev_state, next_state, done=False):
     prev_confused = "Confused" in prev_state.statuses
     next_confused = "Confused" in next_state.statuses
 
+    prev_opp_frozen = "Frozen" in prev_state.opp_statuses
+    next_opp_frozen = "Frozen" in next_state.opp_statuses
+
+    prev_opp_confused = "Confused" in prev_state.opp_statuses
+    next_opp_confused = "Confused" in next_state.opp_statuses
+
     if not prev_frozen and next_frozen:
         reward -= 4.0
 
     if not prev_confused and next_confused:
         reward -= 3.0
+
+    if not prev_opp_frozen and next_opp_frozen:
+        reward += 5.0
+
+    if not prev_opp_confused and next_opp_confused:
+        reward += 4.0
 
     x, y = next_state.me_xy
     opp_x, opp_y = next_state.opp_xy
@@ -267,118 +280,128 @@ def print_turn(gs, player_name, command, state, reward):
     print_map(state.map)
 
 
-def main():
-    game_id, p1_id, p2_id, state_url, raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
-
-    init_state = parse_state(raw, p1_id)
-    obs_dim = len(init_state.get_state_vector())
-    print(f"obs_dim={obs_dim}")
-
-    agent = PPO(obs_dim=obs_dim, action_dim=60)
-    last_state_p1 = init_state
-    last_state_p2 = parse_state(raw, p2_id)
-    current_raw = raw  # nose stanje izmedju tura — eliminise redundantni GET #1
+def run_worker(worker_id, agent, act_lock, result_queue):
+    game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+    last_state_p1 = parse_state(current_raw, p1_id)
+    last_state_p2 = parse_state(current_raw, p2_id)
     consecutive_failures = 0
+    memory = make_memory()
+    steps_collected = 0
 
-    for update in range(TOTAL_UPDATES):
-        memory = make_memory()
-        steps_collected = 0
-
-        while steps_collected < ROLLOUT_STEPS:
-            # Ako nemamo stanje (MonsterTurn prethodne iteracije), cekaj WS + GET
-            if current_raw is None:
-                turn_event.wait(timeout=10)
-                turn_event.clear()
-                current_raw = requests.get(state_url, timeout=5).json()
-
-            gs = current_raw.get("GameState", "")
-
-            if gs == "Player1Turn":
-                current_id = p1_id
-                player_name = BOT1_NAME
-            elif gs == "Player2Turn":
-                current_id = p2_id
-                player_name = BOT2_NAME
-            else:
-                # MonsterTurn: odbaci stanje i cekaj sledeci signal
-                current_raw = None
-                continue
-
-            state = parse_state(current_raw, current_id)
-            obs = state.get_state_vector()
-            mask = build_action_mask(state)
-
-            action_idx, logprob, value = agent.model.act(obs, mask)
-            command = action_index_to_command(action_idx, state)
-            prev_state = state
-
-            command_ok = True
-            try:
-                send_api_command(BASE_URL, game_id, command)
-                consecutive_failures = 0
-            except Exception as e:
-                print(f"Bad action [{gs}]:", command, e)
-                command_ok = False
-                consecutive_failures += 1
-
-            if consecutive_failures >= 3:
-                print(f"[STUCK] {consecutive_failures} uzastopnih gresaka, restartujem igru")
-                game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
-                last_state_p1 = parse_state(current_raw, p1_id)
-                last_state_p2 = parse_state(current_raw, p2_id)
-                consecutive_failures = 0
-                continue
-
-            if not command_ok:
-                # Komanda nije prosla — ne cekaj WS, samo osvezi stanje i preskoči ovaj korak
-                current_raw = requests.get(state_url, timeout=5).json()
-                continue
-
-            # Cekaj WS potvrdu da je turn promenjen, zatim GET (jedini GET po potezu)
-            turn_event.wait(timeout=6)
+    while steps_collected < ROLLOUT_STEPS:
+        if current_raw is None:
+            turn_event.wait(timeout=10)
             turn_event.clear()
             current_raw = requests.get(state_url, timeout=5).json()
 
-            next_state = parse_state(current_raw, current_id)
-            done = current_raw.get("GameState", "") == "Ending" or next_state.health <= 0 or next_state.opp_health <= 0
-            reward = reward_fn(prev_state, next_state, done)
+        gs = current_raw.get("GameState", "")
 
-            action = command.get("Action", "?")
-            target = command.get("Target", command.get("TargetId", ""))
-            print(f"[{gs}] {player_name}: {action} {target}  HP={next_state.health}/{next_state.max_health}  reward={reward:+.2f}")
+        if gs == "Player1Turn":
+            current_id = p1_id
+            player_name = BOT1_NAME
+        elif gs == "Player2Turn":
+            current_id = p2_id
+            player_name = BOT2_NAME
+        else:
+            current_raw = None
+            continue
 
-            suffix = "p1" if gs == "Player1Turn" else "p2"
-            memory[f"obs_{suffix}"].append(obs)
-            memory[f"actions_{suffix}"].append(action_idx)
-            memory[f"logprobs_{suffix}"].append(logprob)
-            memory[f"values_{suffix}"].append(value)
-            memory[f"rewards_{suffix}"].append(reward)
-            memory[f"dones_{suffix}"].append(int(done))
-            memory[f"masks_{suffix}"].append(mask)
+        state = parse_state(current_raw, current_id)
+        obs = state.get_state_vector()
+        mask = build_action_mask(state)
 
-            if gs == "Player1Turn":
-                last_state_p1 = next_state
-            else:
-                last_state_p2 = next_state
+        with act_lock:
+            action_idx, logprob, value = agent.model.act(obs, mask)
+        command = action_index_to_command(action_idx, state)
+        prev_state = state
 
-            print("Game ending:", done)
-            if done:
-                game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(
-                    BASE_URL, BOT1_NAME, BOT2_NAME
-                )
-                last_state_p1 = parse_state(current_raw, p1_id)
-                last_state_p2 = parse_state(current_raw, p2_id)
+        command_ok = True
+        try:
+            send_api_command(BASE_URL, game_id, command)
+            consecutive_failures = 0
+        except Exception as e:
+            print(f"[W{worker_id}] Bad action [{gs}]:", command, e)
+            command_ok = False
+            consecutive_failures += 1
 
-            steps_collected += 1
+        if consecutive_failures >= 3:
+            print(f"[W{worker_id}][STUCK] restartujem igru")
+            game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+            last_state_p1 = parse_state(current_raw, p1_id)
+            last_state_p2 = parse_state(current_raw, p2_id)
+            consecutive_failures = 0
+            continue
 
-        # Bootstrap zasebno za P1 i P2
+        if not command_ok:
+            current_raw = requests.get(state_url, timeout=5).json()
+            continue
+
+        turn_event.wait(timeout=6)
+        turn_event.clear()
+        current_raw = requests.get(state_url, timeout=5).json()
+
+        next_state = parse_state(current_raw, current_id)
+        done = current_raw.get("GameState", "") == "Ending" or next_state.health <= 0 or next_state.opp_health <= 0
+        reward = reward_fn(prev_state, next_state, done)
+
+        action = command.get("Action", "?")
+        target = command.get("Target", command.get("TargetId", ""))
+        print(f"[W{worker_id}][{gs}] {player_name}: {action} {target}  HP={next_state.health}/{next_state.max_health}  reward={reward:+.2f}")
+
+        suffix = "p1" if gs == "Player1Turn" else "p2"
+        memory[f"obs_{suffix}"].append(obs)
+        memory[f"actions_{suffix}"].append(action_idx)
+        memory[f"logprobs_{suffix}"].append(logprob)
+        memory[f"values_{suffix}"].append(value)
+        memory[f"rewards_{suffix}"].append(reward)
+        memory[f"dones_{suffix}"].append(int(done))
+        memory[f"masks_{suffix}"].append(mask)
+
+        if gs == "Player1Turn":
+            last_state_p1 = next_state
+        else:
+            last_state_p2 = next_state
+
+        if done:
+            game_id, p1_id, p2_id, state_url, current_raw, turn_event = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+            last_state_p1 = parse_state(current_raw, p1_id)
+            last_state_p2 = parse_state(current_raw, p2_id)
+
+        steps_collected += 1
+
+    with act_lock:
         _, _, nv_p1 = agent.model.act(last_state_p1.get_state_vector(), build_action_mask(last_state_p1))
         _, _, nv_p2 = agent.model.act(last_state_p2.get_state_vector(), build_action_mask(last_state_p2))
 
-        agent.update(memory, nv_p1, nv_p2)
-        total_rewards = sum(memory["rewards_p1"]) + sum(memory["rewards_p2"])
-        print(f"Update {update}  steps={steps_collected}  "
-              f"reward_sum={total_rewards:.2f}")
+    result_queue.put((memory, nv_p1, nv_p2))
+
+
+def main():
+    # Jedna inicijalna igra samo da odredimo obs_dim
+    _, p1_id_init, _, _, raw_init, _ = new_game(BASE_URL, BOT1_NAME, BOT2_NAME)
+    obs_dim = len(parse_state(raw_init, p1_id_init).get_state_vector())
+    print(f"obs_dim={obs_dim}")
+
+    agent = PPO(obs_dim=obs_dim, action_dim=60)
+    act_lock = threading.Lock()
+
+    for update in range(TOTAL_UPDATES):
+        result_queue = queue.Queue()
+        threads = [
+            threading.Thread(target=run_worker, args=(i, agent, act_lock, result_queue), daemon=True)
+            for i in range(NUM_ENVS)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        all_env_data = [result_queue.get() for _ in range(NUM_ENVS)]
+        agent.update(all_env_data)
+
+        total_rewards = sum(sum(mem["rewards_p1"]) + sum(mem["rewards_p2"]) for mem, _, _ in all_env_data)
+        total_steps = sum(len(mem["rewards_p1"]) + len(mem["rewards_p2"]) for mem, _, _ in all_env_data)
+        print(f"Update {update}  envs={NUM_ENVS}  steps={total_steps}  reward_sum={total_rewards:.2f}")
 
         agent.save("ppo_model.pt")
         print(f"  -> Saved ppo_model.pt")

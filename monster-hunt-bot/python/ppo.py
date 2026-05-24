@@ -73,7 +73,7 @@ class PPO:
         update_epochs=4,
         batch_size=64,
         value_coef=0.5,
-        entropy_coef=0.01
+        entropy_coef=0.05
     ):
         self.model = ActorCritic(obs_dim, action_dim).to(DEVICE)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
@@ -109,22 +109,24 @@ class PPO:
 
         return advantages, returns
 
-    def update(self, memory, next_value_p1, next_value_p2):
-        adv_p1, ret_p1 = self.compute_gae(
-            memory["rewards_p1"], memory["values_p1"], memory["dones_p1"], next_value_p1
-        )
-        adv_p2, ret_p2 = self.compute_gae(
-            memory["rewards_p2"], memory["values_p2"], memory["dones_p2"], next_value_p2
-        )
-        advantages = adv_p1 + adv_p2
-        returns = ret_p1 + ret_p2
+    def update(self, all_env_data):
+        """all_env_data: lista (memory, nv_p1, nv_p2) — po jedan unos po envu."""
+        obs_all, actions_all, logprobs_all, masks_all, advantages, returns = [], [], [], [], [], []
 
-        obs_all     = memory["obs_p1"]     + memory["obs_p2"]
-        actions_all = memory["actions_p1"] + memory["actions_p2"]
-        logprobs_all= memory["logprobs_p1"]+ memory["logprobs_p2"]
-        masks_all   = memory["masks_p1"]   + memory["masks_p2"]
+        for memory, nv_p1, nv_p2 in all_env_data:
+            adv_p1, ret_p1 = self.compute_gae(
+                memory["rewards_p1"], memory["values_p1"], memory["dones_p1"], nv_p1
+            )
+            adv_p2, ret_p2 = self.compute_gae(
+                memory["rewards_p2"], memory["values_p2"], memory["dones_p2"], nv_p2
+            )
+            obs_all      += memory["obs_p1"]      + memory["obs_p2"]
+            actions_all  += memory["actions_p1"]  + memory["actions_p2"]
+            logprobs_all += memory["logprobs_p1"] + memory["logprobs_p2"]
+            masks_all    += memory["masks_p1"]    + memory["masks_p2"]
+            advantages   += adv_p1 + adv_p2
+            returns      += ret_p1 + ret_p2
 
-        # pomešaj redosled da minibatch ne bude samo jedan igrač
         import random
         combined = list(zip(obs_all, actions_all, logprobs_all, masks_all, advantages, returns))
         random.shuffle(combined)

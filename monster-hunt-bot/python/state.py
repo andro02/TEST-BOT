@@ -95,7 +95,7 @@ class Field(Enum):
     ENEMY_MONSTER_3 = 19
 
 class State(object):
-    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, item_ids, cards, card_ids, monster_cooldowns, map, enemy_monster_ids_by_pos, statuses, statuses_lasting, me_xy, opp_xy, opp_health):
+    def __init__(self, turn_counter, player_id, opp_id, max_health, attack_dmg, health, level, xp, inventory, item_ids, cards, card_ids, monster_cooldowns, map, enemy_monster_ids_by_pos, statuses, statuses_lasting, me_xy, opp_xy, opp_health, opp_statuses):
         # self.health = 100
         # self.level = 0
         # self.xp = 0
@@ -133,6 +133,7 @@ class State(object):
         self.me_xy = me_xy
         self.opp_xy = opp_xy
         self.opp_health = opp_health
+        self.opp_statuses = opp_statuses
 
     # Poznati statusi — za fiksnu enkodiranu poziciju u vektoru
     _STATUS_IDX = {"Confused": 0, "Frozen": 1}
@@ -276,6 +277,7 @@ def parse_state(data, player_id):
 
     other_key = next(k for k in data["Players"] if k != player_id)
     opp_hp = data["Players"][other_key]["Health"]
+    opp_statuses = list(data["Players"][other_key]["ActiveStatuses"].keys())
     me_x, me_y = data["Players"][player_id]["Position"]["X"], data["Players"][player_id]["Position"]["Y"]
     opp_x, opp_y = data["Players"][other_key]["Position"]["X"], data["Players"][other_key]["Position"]["Y"]
     map[16 * me_x + me_y] = Field.ME
@@ -284,7 +286,7 @@ def parse_state(data, player_id):
 
     return State(data["TurnCounter"], player_id, other_key, max_hp, attack_dmg, hp, level, xp,
                  inventory, item_ids, cards, card_ids, cooldowns,
-                 map, enemy_monster_ids_by_pos, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y), opp_hp)
+                 map, enemy_monster_ids_by_pos, statuses, statuses_lasting, (me_x, me_y), (opp_x, opp_y), opp_hp, opp_statuses)
 
 
 def get_state(url, player_id):
