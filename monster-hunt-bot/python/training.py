@@ -320,8 +320,8 @@ def main():
             turn_event.clear()
             current_raw = requests.get(state_url, timeout=5).json()
 
-            done = current_raw.get("GameState", "") == "Ending"
             next_state = parse_state(current_raw, current_id)
+            done = current_raw.get("GameState", "") == "Ending" or next_state.health <= 0 or next_state.opp_health <= 0
             reward = reward_fn(prev_state, next_state, done)
 
             action = command.get("Action", "?")
